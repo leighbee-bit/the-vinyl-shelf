@@ -11,7 +11,7 @@
 <title>The Vinyl Shelf</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<link rel="stylesheet" href="styles.css?v=2026-11-08b">
+<link rel="stylesheet" href="styles.css?v=2026-11-08c">
 </head>
 <body>
 
@@ -288,8 +288,9 @@
       <div class="wall-tabs" role="tablist">
         <button role="tab" data-tab="albums" aria-selected="true">Albums <span class="count" data-count="albums"></span></button>
         <button role="tab" data-tab="playlists" aria-selected="false">Playlists <span class="count" data-count="playlists"></span></button>
+        <button role="tab" data-tab="vinyl" aria-selected="false">My vinyl <span class="count" data-count="vinyl"></span></button>
       </div>
-      <input type="search" id="libSearch" placeholder="Search albums and playlists" autocomplete="off" spellcheck="false" aria-label="Search your records">
+      <input type="search" id="libSearch" placeholder="Search your records" autocomplete="off" spellcheck="false" aria-label="Search your records">
       <button class="icon-btn small close" data-close aria-label="Close record wall">
         <svg viewBox="0 0 24 24"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z"/></svg>
       </button>
@@ -300,6 +301,9 @@
         <div class="shelves"></div>
       </section>
       <section class="wall-sec" data-kind="playlists">
+        <div class="shelves"></div>
+      </section>
+      <section class="wall-sec" data-kind="vinyl">
         <div class="shelves"></div>
       </section>
     </div>
@@ -357,6 +361,26 @@
       </div>
     </section>
 
+    <section id="discogsSec">
+      <h3>Record collection</h3>
+      <p id="discogsStatus">Add your Discogs username to see which records you own and what’s on your wishlist.</p>
+      <label class="field" for="discogsUser">Discogs username</label>
+      <input type="text" id="discogsUser" placeholder="e.g. vinylfan88" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <details class="mini">
+        <summary>Collection set to private?</summary>
+        <p class="hint">Discogs only shares public collections. For a private one, create a personal access token at
+          <a href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">discogs.com/settings/developers</a> and paste it here.
+          It stays in this browser and is only sent to Discogs.</p>
+        <label class="field" for="discogsToken">Personal access token</label>
+        <input type="password" id="discogsToken" autocomplete="off" spellcheck="false">
+      </details>
+      <div class="row">
+        <button class="btn primary" id="discogsSync">Connect Discogs</button>
+        <button class="btn hidden" id="discogsClear">Disconnect</button>
+      </div>
+      <p class="hint">Only vinyl is shown. Your listening stats stay in this browser.</p>
+    </section>
+
     <section>
       <h3>Turntable finish</h3>
       <div class="swatches" id="swatches"></div>
@@ -370,6 +394,6 @@
     </section>
   </dialog>
 
-<script src="app.js?v=2026-11-08b"></script>
+<script src="app.js?v=2026-11-08c"></script>
 </body>
 </html>

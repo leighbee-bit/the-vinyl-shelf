@@ -681,3 +681,45 @@ input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; 
 /* section headings in the live playlist queue */
 .tl-note.tl-head { padding: 12px 12px 4px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
 .tl li.current button:disabled:hover { background: rgba(255,255,255,.1); }
+
+/* ===================== your collection: My vinyl shelves, stickers, Discogs ===================== */
+.vgroup { margin-bottom: 18px; }
+.vgroup-title { font-size: 20px; font-weight: 800; margin: 6px 4px 18px; letter-spacing: -.01em; }
+.vgroup-title small { display: block; font-size: 13px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-top: 3px; }
+.vconnect {
+  margin: 10px 4px 34px; padding: 20px 22px; border-radius: 16px; max-width: 560px;
+  background: linear-gradient(160deg, rgba(231,200,145,.14), rgba(255,255,255,.04)); border: 1px solid var(--line);
+}
+.vconnect b { font-size: 16px; }
+.vconnect p { color: var(--muted); font-size: 14px; margin: 6px 0 14px; }
+
+/* a little round sticker on the sleeve's corner: ✓ owned, ♥ wishlist */
+.sticker {
+  position: absolute; z-index: 2; top: -7px; right: -7px; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13px; font-weight: 900; line-height: 1;
+  box-shadow: 0 3px 8px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4); pointer-events: none;
+  transition: transform .28s var(--ease);
+}
+.sticker.owned { background: radial-gradient(circle at 35% 30%, #f3dfae, #c9a062); color: #3a240e; }
+.sticker.wanted { background: radial-gradient(circle at 35% 30%, #f2b8b8, #c96a72); color: #fff; font-size: 12px; }
+.rec:hover .sticker, .rec:focus-visible .sticker { transform: translateY(-10px); }
+.rec-badge {
+  position: absolute; z-index: 1; left: 6px; bottom: 6px; max-width: calc(100% - 12px);
+  padding: 3px 7px; border-radius: 999px; background: rgba(15,10,6,.78); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  color: #f3e6cf; font-size: 10.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 520px) { .rec-badge { font-size: 9px; padding: 2px 5px; left: 4px; bottom: 4px; } .sticker { width: 20px; height: 20px; font-size: 11px; } }
+
+/* vinyl panel: collection line + read-only pressings */
+.vp-own { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0 2px; }
+.own-tag { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; }
+.own-tag.owned { background: linear-gradient(180deg, #e7c891, #b98f55); color: #2b1b0d; }
+.own-tag.wanted { background: rgba(201,106,114,.25); color: #f4c4c4; border: 1px solid rgba(201,106,114,.5); }
+.own-spins { font-size: 13px; color: var(--muted); }
+div.press { grid-template-columns: 30px minmax(0, 1fr) auto; cursor: default; }
+.vinyl-pill.owned { color: #f3dfae; }
+
+/* settings: Discogs */
+details.mini { margin-top: 10px; }
+details.mini summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+details.mini p { margin: 8px 0 0; }

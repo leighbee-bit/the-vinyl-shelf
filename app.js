@@ -1081,7 +1081,188 @@
     return data;
   };
 
-  const vinyl = { albumId: null, status: 'idle', data: null, choice: -1, showAll: false };
+  // ================================================================ your collection: full-album spins + Discogs
+  // "Full spin": you heard at least 80% of an album's songs (each past its halfway point) within a 6-hour window.
+  const Spins = (() => {
+    const SESSION = 6 * 3600e3;
+    let cache = null, cacheKey = null;
+    const DEMO_SEED = { a1: 4, a4: 3, a2: 2, a0: 1 };
+    function load() {
+      const k = state.mode === 'demo' ? 'tt.spins.demo' : 'tt.spins';
+      if (cacheKey === k) return cache;
+      try { cache = JSON.parse(store.get(k) || 'null'); } catch { cache = null; }
+      cacheKey = k;
+      if (!cache) {
+        cache = {};
+        if (state.mode === 'demo') for (const [id, n] of Object.entries(DEMO_SEED)) {
+          const a = Demo.albums.find((x) => x.id === id);
+          cache[id] = { spins: n, heard: {}, last: Date.now() - n * 864e5, name: a.name, artist: a.artist, cover: a.cover, uri: a.uri, year: a.year || '', n: a.tracks.length };
+        }
+      }
+      return cache;
+    }
+    const save = () => store.set(cacheKey, JSON.stringify(cache));
+    function check() {
+      const t = state.track, a = state.album;
+      if (!t || !a || !state.isPlaying || !(state.trackIndex >= 0) || a.tracks.length < 4) return;   // singles & short EPs don't count
+      if (currentProgress() < Math.min(t.durationMs * .5, 240e3)) return;
+      const all = load(), now = Date.now();
+      const r = all[a.id] || (all[a.id] = { spins: 0, heard: {} });
+      Object.assign(r, { name: a.name, artist: a.artist, cover: a.cover || null, uri: a.uri, year: a.year || '', upc: a.upc || null, n: a.tracks.length });
+      const tid = a.tracks[state.trackIndex].id;
+      if (r.heard[tid]) return;
+      for (const k in r.heard) if (now - r.heard[k] > SESSION) delete r.heard[k];
+      r.heard[tid] = now;
+      if (Object.keys(r.heard).length >= Math.ceil(a.tracks.length * .8)) {
+        r.spins++; r.last = now; r.heard = {};
+        save(); onFullSpin(a, r);
+      } else save();
+    }
+    return { check, all: load, get: (id) => load()[id] || null };
+  })();
+  setInterval(Spins.check, 2000);
+
+  const nth = (n) => `${n}${[, 'st', 'nd', 'rd'][(n % 100 >> 3 ^ 1) && n % 10] || 'th'}`;
+  function onFullSpin(a, r) {
+    const own = Discogs.match(a);
+    const times = r.spins === 1 ? 'first full spin' : `${nth(r.spins)} full spin`;
+    toast(own.owned || r.spins < 2 ? `“${a.name}” · your ${times}` : `“${a.name}” · your ${times}. Worth owning? Press V for pressings`, 5000);
+    renderVinyl();
+    if (wallOpen() && lib.tab === 'vinyl') renderWall();
+  }
+
+  // Discogs: your vinyl collection and wantlist. Public collections need only a username;
+  // private ones need a personal access token (kept in this browser, sent only to api.discogs.com).
+  const Discogs = (() => {
+    const CFG = 'tt.discogs', DATA = 'tt.discogsData';
+    const read = (k) => { try { return JSON.parse(store.get(k) || 'null'); } catch { return null; } };
+    let data = read(DATA), index = null, syncing = false;
+    const fold = (s) => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
+    const normArtist = (s) => fold(String(s || '').split(', ')[0].replace(/\s*\(\d+\)$/, '').replace(/\*$/, ''))
+      .replace(/^the\s+/, '').replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
+    const normTitle = (s) => fold(s).replace(/\s*[(\[][^)\]]*(remaster|deluxe|edition|version|anniversary|expanded|bonus|mono|stereo|reissue)[^)\]]*[)\]]/g, '')
+      .replace(/\s+-\s+.*(remaster|edition|version).*$/, '').replace(/^the\s+/, '').replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
+    const keyOf = (artist, title) => `${normArtist(artist)}|${normTitle(title)}`;
+
+    const DEMO = (() => {
+      const it = (id, title, artist, year, cover) => ({ id, title, artist, year, cover, fmt: 'LP, Album' });
+      const A = (i) => Demo.albums[i];
+      return {
+        user: 'demo', at: Date.now(),
+        owned: [it(1, A(0).name, A(0).artist, 2024, A(0).cover), it(2, A(3).name, A(3).artist, 2022, A(3).cover),
+          it(3, 'Coastline Hymns', 'Willa Grey', 2019, { gradient: 'linear-gradient(150deg,#d9c39a,#6f8f8a 60%,#2d3e44)' })],
+        wants: [it(4, A(4).name, A(4).artist, 2021, A(4).cover), it(5, 'Paper Weather', 'The Low Fields', 2018, { gradient: 'linear-gradient(150deg,#e3b3a0,#8e5a6a 60%,#3b2433)' })],
+      };
+    })();
+    const current = () => (state.mode === 'demo' ? DEMO : data);
+    let indexFor = null;
+    function getIndex() {
+      const d = current();
+      if (indexFor === d && index) return index;
+      index = new Map(); indexFor = d;
+      if (!d) return index;
+      for (const [list, flag] of [[d.owned, 'owned'], [d.wants, 'wanted']]) for (const r of list || []) {
+        const k = keyOf(r.artist, r.title), e = index.get(k) || {};
+        if (!e[flag]) e[flag] = r;
+        index.set(k, e);
+      }
+      return index;
+    }
+    function match(a) {
+      if (!a) return {};
+      return getIndex().get(keyOf(a.artist || a.sub, a.name)) || {};
+    }
+
+    async function get(url, token, tries = 3) {
+      const res = await fetch(url, { headers: token ? { Authorization: `Discogs token=${token}` } : {} });
+      if (res.status === 429 && tries > 0) { await new Promise((r) => setTimeout(r, 4000)); return get(url, token, tries - 1); }
+      if (!res.ok) { const e = new Error(`Discogs ${res.status}`); e.status = res.status; throw e; }
+      return res.json();
+    }
+    const mapItem = (r) => {
+      const b = r.basic_information || {};
+      const cover = b.cover_image && !/spacer\.gif/.test(b.cover_image) ? { url: b.cover_image } : null;
+      return {
+        id: b.id, master: b.master_id || null, title: b.title || '', year: b.year || '',
+        artist: (b.artists || []).map((x) => x.name.replace(/\s*\(\d+\)$/, '').replace(/\*$/, '')).join(', '),
+        cover, fmt: (b.formats || []).map((f) => [f.name, ...(f.descriptions || [])].join(', ')).join(' + '),
+        vinyl: (b.formats || []).some((f) => /vinyl/i.test(f.name || '')),
+      };
+    };
+    async function pages(path, field, token, onPage) {
+      const out = [];
+      let url = `https://api.discogs.com${path}${path.includes('?') ? '&' : '?'}per_page=100`;
+      for (let p = 0; url && p < 60; p++) {
+        if (p && !token) await new Promise((r) => setTimeout(r, 1100));   // 25 requests/minute without a token
+        const d = await get(url, token);
+        out.push(...(d[field] || []).map(mapItem));
+        onPage && onPage(out.length, d.pagination && d.pagination.items);
+        url = d.pagination && d.pagination.urls && d.pagination.urls.next;
+      }
+      return out;
+    }
+    async function sync({ quiet = false } = {}) {
+      const cfg = read(CFG);
+      if (!cfg || !cfg.user || syncing) return;
+      syncing = true; renderDiscogsStatus(); if (wallOpen()) renderWall();
+      const u = encodeURIComponent(cfg.user);
+      try {
+        const owned = await pages(`/users/${u}/collection/folders/0/releases?sort=added&sort_order=desc`, 'releases', cfg.token,
+          (n, total) => renderDiscogsStatus(`Syncing… ${n}${total ? ` of ${total}` : ''} records`));
+        let wants = [], wantsHidden = false;
+        try { wants = await pages(`/users/${u}/wants`, 'wants', cfg.token); } catch (e) { if (e.status === 403 || e.status === 401) wantsHidden = true; else throw e; }
+        data = { user: cfg.user, at: Date.now(), owned: owned.filter((r) => r.vinyl), wants: wants.filter((r) => r.vinyl), skipped: owned.length - owned.filter((r) => r.vinyl).length, wantsHidden };
+        store.set(DATA, JSON.stringify(data));
+        if (!quiet) toast(`Synced ${data.owned.length} records from Discogs`);
+      } catch (e) {
+        const why = e.status === 404 ? `Discogs doesn’t know the user “${cfg.user}”.`
+          : e.status === 401 || e.status === 403 ? 'That Discogs collection is private. Add a personal access token in Settings.'
+          : 'Couldn’t reach Discogs right now.';
+        toast(why, 6000);
+        if (data) data.error = why; else data = null;
+        renderDiscogsStatus(why);
+        syncing = false; if (wallOpen()) renderWall();
+        return;
+      }
+      syncing = false;
+      renderDiscogsStatus(); renderVinyl();
+      if (wallOpen()) renderWall();
+    }
+    function setConfig(user, token) {
+      user = (user || '').trim().replace(/^.*discogs\.com\/(user\/)?/i, '').replace(/\/.*$/, '');
+      if (!user) { clear(); return false; }
+      const prev = read(CFG) || {};
+      store.set(CFG, JSON.stringify({ user, token: (token || '').trim() || null }));
+      if (prev.user !== user) { data = null; store.del(DATA); }
+      return true;
+    }
+    function clear() { store.del(CFG); store.del(DATA); data = null; renderDiscogsStatus(); renderVinyl(); if (wallOpen()) renderWall(); }
+    return {
+      match, sync, setConfig, clear, keyOf,
+      config: () => read(CFG),
+      data: current,
+      isSyncing: () => syncing,
+      connected: () => state.mode === 'demo' || !!read(CFG),
+      maybeAutoSync() { const c = read(CFG); if (c && (!data || data.user !== c.user || Date.now() - data.at > 12 * 3600e3)) sync({ quiet: true }); },
+    };
+  })();
+
+  function renderDiscogsStatus(msg) {
+    const el = $('discogsStatus'); if (!el) return;
+    const c = Discogs.config(), d = Discogs.data();
+    $('discogsClear').classList.toggle('hidden', !c);
+    $('discogsSync').textContent = c ? 'Sync now' : 'Connect Discogs';
+    if (msg) { el.textContent = msg; return; }
+    if (state.mode === 'demo') { el.textContent = 'Demo mode — showing a made-up collection.'; return; }
+    if (!c) { el.textContent = 'Add your Discogs username to see which records you own and what’s on your wishlist.'; return; }
+    if (Discogs.isSyncing()) { el.textContent = 'Syncing…'; return; }
+    if (!d) { el.textContent = `Connected as ${c.user}. Not synced yet.`; return; }
+    const ago = Math.round((Date.now() - d.at) / 60e3);
+    el.textContent = `${d.owned.length} records on your shelf · ${d.wantsHidden ? 'wishlist is private' : `${d.wants.length} on your wishlist`} · synced ${ago < 1 ? 'just now' : ago < 60 ? `${ago} min ago` : ago < 1440 ? `${Math.round(ago / 60)} h ago` : `${Math.round(ago / 1440)} d ago`}`
+      + (d.skipped ? ` · ${d.skipped} CDs/tapes hidden` : '');
+  }
+
+  const vinyl = { albumId: null, status: 'idle', data: null, choice: -1, showAll: false, browse: null };
   async function onAlbumForVinyl(a) {
     if (!a) {
       vinyl.albumId = null; vinyl.status = 'idle'; vinyl.data = null; vinyl.choice = -1;
@@ -1128,52 +1309,86 @@
   };
   const link = (href, inner, cls = '') => `<a class="${cls}" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
 
-  function renderVinyl() {
-    const a = state.album, ps = (vinyl.data && vinyl.data.pressings) || [];
-    // pill under the album name
-    const chosen = vinyl.choice >= 0 ? ps[vinyl.choice] : null;
-    $('vinylDot').style.background = swatchBg(chosen && chosen.look, a && a.cover);
-    $('vinylPillText').textContent = chosen && chosen.look ? `${pressName(chosen)} · where to buy` : 'Vinyl & where to buy';
-    $('vinylBtn').classList.toggle('hidden', !state.track || !a);
-    if (!a) { $('vpBody').innerHTML = '<p class="vp-note">This one isn’t part of an album Spotify knows about, so there’s nothing to look up.</p>'; return; }
+  // collection line at the top of the vinyl panel: owned / wishlist / spin count
+  function ownHtml(a) {
+    const own = Discogs.match(a), sp = Spins.get(a.id), bits = [];
+    if (own.owned) bits.push(`<span class="own-tag owned">On your shelf</span>`);
+    else if (own.wanted) bits.push(`<span class="own-tag wanted">On your wishlist</span>`);
+    if (sp && sp.spins) bits.push(`<span class="own-spins">${sp.spins === 1 ? 'Played front to back once' : `Played front to back ${sp.spins} times`}</span>`);
+    return bits.length ? `<div class="vp-own">${bits.join('')}</div>` : '';
+  }
 
-    $('vpCover').style.backgroundImage = coverCss(a.cover);
-    $('vpTitle').textContent = a.name;
-    $('vpSub').textContent = [a.artist, a.year].filter(Boolean).join(' · ');
+  function renderVinyl() {
+    const a = state.album;
+    // pill under the album name
+    const ps0 = (vinyl.data && vinyl.data.pressings) || [];
+    const chosen = vinyl.choice >= 0 ? ps0[vinyl.choice] : null;
+    const own = a ? Discogs.match(a) : {};
+    $('vinylDot').style.background = swatchBg(chosen && chosen.look, a && a.cover);
+    $('vinylPillText').textContent = own.owned ? (chosen && chosen.look ? `On your shelf · ${pressName(chosen)}` : 'On your shelf · pressings')
+      : own.wanted ? 'On your wishlist · where to buy'
+      : chosen && chosen.look ? `${pressName(chosen)} · where to buy` : 'Vinyl & where to buy';
+    $('vinylBtn').classList.toggle('owned', !!own.owned);
+    $('vinylBtn').classList.toggle('hidden', !state.track || !a);
+
+    const b = vinyl.browse;                    // looking at a record from the wall, not the one playing
+    const shown = b ? b.album : a;
+    if (!shown) { $('vpBody').innerHTML = '<p class="vp-note">This one isn’t part of an album Spotify knows about, so there’s nothing to look up.</p>'; return; }
+    $('vpCover').style.backgroundImage = shown.cover ? coverCss(shown.cover) : '';
+    $('vpTitle').textContent = shown.name;
+    $('vpSub').textContent = [shown.artist, shown.year].filter(Boolean).join(' · ');
+    $('vpBody').innerHTML = ownHtml(shown) + vinylBodyHtml(shown, b || vinyl, !b);
+    const more = $('vpMore'); if (more) more.onclick = () => { (b || vinyl).showAll = true; renderVinyl(); };
+  }
+
+  // pressings + where to buy. `interactive`: radio buttons choose what the turntable shows (only for the album playing)
+  function vinylBodyHtml(a, v, interactive) {
+    const ps = (v.data && v.data.pressings) || [];
     let h = '<h4>Pressings</h4>';
-    if (vinyl.status === 'loading') h += '<p class="vp-note">Flipping through the crates on MusicBrainz…</p>';
-    else if (vinyl.status === 'error') h += '<p class="vp-note">Couldn’t reach MusicBrainz right now, so pressings are unknown. The shop searches below still work.</p>';
+    if (v.status === 'loading') h += '<p class="vp-note">Flipping through the crates on MusicBrainz…</p>';
+    else if (v.status === 'error') h += '<p class="vp-note">Couldn’t reach MusicBrainz right now, so pressings are unknown. The shop searches below still work.</p>';
     else if (!ps.length) {
-      h += `<p class="vp-empty"><b>No vinyl pressing found.</b>${vinyl.data && vinyl.data.found
+      h += `<p class="vp-empty"><b>No vinyl pressing found.</b>${v.data && v.data.found
         ? 'MusicBrainz knows this release but lists no vinyl version — it may be digital-only.'
         : 'We couldn’t find this release on MusicBrainz.'} The shop searches below may still turn something up.</p>`;
     } else {
-      const radio = (val, checked, disc, title, meta, extra = '') =>
-        `<label class="press"><input type="radio" name="press" value="${val}" ${checked ? 'checked' : ''}><span class="press-disc" style="background:${esc(disc)}"></span><span><b>${title}</b><small>${meta}</small></span>${extra}</label>`;
-      h += radio(-1, vinyl.choice === -1, swatchBg(null), 'Classic black', 'How the turntable shows it by default');
-      const shown = vinyl.showAll ? ps : ps.slice(0, 10);
-      shown.forEach((p, i) => {
+      const row = (val, checked, disc, title, meta, extra = '') => interactive
+        ? `<label class="press"><input type="radio" name="press" value="${val}" ${checked ? 'checked' : ''}><span class="press-disc" style="background:${esc(disc)}"></span><span><b>${title}</b><small>${meta}</small></span>${extra}</label>`
+        : `<div class="press"><span class="press-disc" style="background:${esc(disc)}"></span><span><b>${title}</b><small>${meta}</small></span>${extra}</div>`;
+      if (interactive) h += row(-1, v.choice === -1, swatchBg(null), 'Classic black', 'How the turntable shows it by default');
+      const list = v.showAll ? ps : ps.slice(0, 10);
+      list.forEach((p, i) => {
         const meta = [p.date, p.country, [p.label, p.catno].filter(Boolean).join(' '), p.format].filter(Boolean).map(esc).join(' · ');
         const tag = p.look ? '<span class="tag">Special</span>' : '';
-        h += radio(i, vinyl.choice === i, swatchBg(p.look, a.cover), esc(pressName(p)) + tag, meta, p.discogs ? link(discogsSell(p.discogs), 'Discogs') : '');
+        h += row(i, v.choice === i, swatchBg(p.look, a.cover), esc(pressName(p)) + tag, meta, p.discogs ? link(discogsSell(p.discogs), 'Discogs') : '');
       });
-      if (ps.length > shown.length) h += `<button class="vp-more" id="vpMore">Show all ${ps.length} pressings</button>`;
+      if (ps.length > list.length) h += `<button class="vp-more" id="vpMore">Show all ${ps.length} pressings</button>`;
     }
 
     h += '<h4>Where to buy</h4>';
     const direct = [];
-    if (vinyl.data && vinyl.data.discogsMaster) direct.push(link(discogsSell(vinyl.data.discogsMaster), '<span>Discogs marketplace</span><small>every pressing, new &amp; used</small>', 'vp-link'));
-    ((vinyl.data && vinyl.data.shops) || []).slice(0, 6).forEach((s) =>
+    if (v.data && v.data.discogsMaster) direct.push(link(discogsSell(v.data.discogsMaster), '<span>Discogs marketplace</span><small>every pressing, new &amp; used</small>', 'vp-link'));
+    else if (a.dgMaster) direct.push(link(`https://www.discogs.com/sell/list?master_id=${a.dgMaster}&format=Vinyl`, '<span>Discogs marketplace</span><small>every pressing, new &amp; used</small>', 'vp-link'));
+    ((v.data && v.data.shops) || []).slice(0, 6).forEach((s) =>
       direct.push(link(s.url, `<span>${esc(hostOf(s.url))}</span><small>${s.type === 'amazon asin' ? 'exact listing' : 'listed on MusicBrainz'}</small>`, 'vp-link')));
     if (direct.length) h += `<div class="vp-links">${direct.join('')}</div>`;
     h += `<div class="vp-sub">${direct.length ? 'Or search the shops' : 'Search the shops'}</div><div class="vp-shops">${
       storeSearches(a).map(([name, url]) => link(url, `${esc(name)}<small>Search for this record</small>`)).join('')}</div>`;
-    h += `<p class="vp-fine">Shop links open a search — stock and prices aren’t checked.${vinyl.data && vinyl.data.demo
+    h += `<p class="vp-fine">Shop links open a search — stock and prices aren’t checked.${v.data && v.data.demo
       ? ' Pressings here are demo data.'
-      : ` Pressing info from ${link(vinyl.data && vinyl.data.mbUrl || 'https://musicbrainz.org', 'MusicBrainz')}, a community-run music database.`}</p>`;
-    $('vpBody').innerHTML = h;
-    const more = $('vpMore'); if (more) more.onclick = () => { vinyl.showAll = true; renderVinyl(); };
+      : ` Pressing info from ${link(v.data && v.data.mbUrl || 'https://musicbrainz.org', 'MusicBrainz')}, a community-run music database.`}</p>`;
+    return h;
   }
+
+  // open the vinyl panel for any album (from the "My vinyl" shelves)
+  async function openVinylFor(album) {
+    if (state.album && album.id === state.album.id) { vinyl.browse = null; renderVinyl(); openPanel($('vinylPanel')); return; }
+    const b = vinyl.browse = { album, status: 'loading', data: null, showAll: false };
+    renderVinyl(); openPanel($('vinylPanel'));
+    try { b.data = await source().vinyl(album); b.status = 'done'; } catch { b.status = 'error'; }
+    if (vinyl.browse === b) renderVinyl();
+  }
+
   $('vpBody').addEventListener('change', (e) => {
     if (e.target.name !== 'press' || !state.album) return;
     const i = Number(e.target.value), ps = (vinyl.data && vinyl.data.pressings) || [];
@@ -1183,7 +1398,7 @@
   });
   $('vinylBtn').onclick = () => {
     const p = $('vinylPanel');
-    if (p.classList.contains('open')) closePanel(p); else { renderVinyl(); openPanel(p); }
+    if (p.classList.contains('open') && !vinyl.browse) closePanel(p); else { vinyl.browse = null; renderVinyl(); openPanel(p); }
   };
 
   // ================================================================ panels: library + tracklist
@@ -1274,7 +1489,7 @@
 
   // ---------------------------------------------------------------- record wall (library)
   const KINDS = ['albums', 'playlists'];
-  const lib = { items: {}, loading: {}, query: '', gen: 0, tab: store.get('tt.wallTab') === 'playlists' ? 'playlists' : 'albums' };
+  const lib = { items: {}, loading: {}, query: '', gen: 0, tab: ['playlists', 'vinyl'].includes(store.get('tt.wallTab')) ? store.get('tt.wallTab') : 'albums' };
   const wallOpen = () => $('library').classList.contains('open');
   function resetLibrary() { lib.items = {}; lib.loading = {}; lib.gen++; if (wallOpen()) renderWall(); }
 
@@ -1284,6 +1499,7 @@
     if (state.mode === 'idle') { openSetup(); return; }
     openPanel(p); renderWall();
     KINDS.forEach((k) => { if (!lib.items[k]) loadAll(k); });
+    Discogs.maybeAutoSync();
   };
   $('libSearch').addEventListener('input', (e) => { lib.query = e.target.value; renderWall(); });
   function setWallTab(tab) {
@@ -1348,6 +1564,7 @@
     for (const sec of secs) {
       const kind = sec.dataset.kind, all = lib.items[kind], loading = lib.loading[kind];
       const shelves = sec.querySelector('.shelves');
+      if (kind === 'vinyl') { shown += renderVinylShelves(sec, shelves, q, cols, gap); continue; }
       document.querySelector(`[data-count="${kind}"]`).textContent = all ? `${all.length}${loading ? '…' : ''}` : '';
       if (kind !== lib.tab) { sec.hidden = true; continue; }
       const list = (all || []).map((it, i) => ({ it, i })).filter(({ it }) => !q || `${it.name} ${it.sub}`.toLowerCase().includes(q));
@@ -1358,19 +1575,72 @@
         continue;
       }
       sec.hidden = false; shown += list.length;
-      let html = '';
-      for (let r = 0; r < list.length; r += cols) {
-        const row = list.slice(r, r + cols);
-        html += `<div class="shelf-row" style="--cols:${cols};--gap:${gap}px">
-          <div class="row-covers">${row.map((x) => coverHtml(kind, x)).join('')}</div>
-          <div class="plank"></div>
-          <div class="row-caps">${row.map(({ it, i }) => `<button class="cap" data-kind="${kind}" data-i="${i}" tabindex="-1"><span class="name">${esc(it.name)}</span><span class="sub">${esc(it.sub)}</span></button>`).join('')}</div>
-        </div>`;
-      }
-      shelves.innerHTML = html;
+      shelves.innerHTML = shelfRows(kind, list, cols, gap);
     }
     msg.textContent = q && !shown ? `No records match “${lib.query.trim()}”.` : '';
     markCurrentOnWall();
+  }
+
+  function shelfRows(kind, list, cols, gap) {
+    let html = '';
+    for (let r = 0; r < list.length; r += cols) {
+      const row = list.slice(r, r + cols);
+      html += `<div class="shelf-row" style="--cols:${cols};--gap:${gap}px">
+        <div class="row-covers">${row.map((x) => coverHtml(kind, x)).join('')}</div>
+        <div class="plank"></div>
+        <div class="row-caps">${row.map(({ it, i }) => `<button class="cap" data-kind="${kind}" data-i="${i}" tabindex="-1"><span class="name">${esc(it.name)}</span><span class="sub">${esc(it.sub)}</span></button>`).join('')}</div>
+      </div>`;
+    }
+    return html;
+  }
+
+  // "My vinyl": albums you keep playing but don't own, your Discogs shelf, and your wishlist
+  function renderVinylShelves(sec, shelves, q, cols, gap) {
+    sec.hidden = lib.tab !== 'vinyl';
+    const d = Discogs.data(), connected = Discogs.connected();
+    const match = (it) => !q || `${it.name} ${it.sub}`.toLowerCase().includes(q);
+    const fromDg = (r, kind) => ({
+      id: `dg:${r.id}`, uri: '', name: r.title, sub: [r.artist, r.year || ''].filter(Boolean).join(' · '), cover: r.cover,
+      album: { id: `dg:${r.id}`, name: r.title, artist: r.artist, year: r.year ? String(r.year) : '', cover: r.cover, dgMaster: r.master }, kind,
+    });
+    const worth = Object.entries(Spins.all())
+      .filter(([, r]) => r.spins >= 2 && !Discogs.match(r).owned)
+      .sort(([, a], [, b]) => b.spins - a.spins || b.last - a.last)
+      .map(([id, r]) => ({
+        id, uri: r.uri, name: r.name, sub: r.artist, cover: r.cover, badge: `${r.spins}× front to back`,
+        wanted: !!Discogs.match(r).wanted, album: { id, name: r.name, artist: r.artist, year: r.year, cover: r.cover, upc: r.upc },
+      }));
+    lib.items.worth = worth;
+    lib.items.owned = ((d && d.owned) || []).map((r) => fromDg(r, 'owned'));
+    lib.items.wants = ((d && d.wants) || []).map((r) => fromDg(r, 'wants'));
+    for (const it of lib.items.owned) { const sp = Object.values(Spins.all()).find((r) => Discogs.keyOf(r.artist, r.name) === Discogs.keyOf(it.album.artist, it.name)); if (sp && sp.spins) it.badge = `${sp.spins}× front to back`; }
+    document.querySelector('[data-count="vinyl"]').textContent = d ? String(lib.items.owned.length) : '';
+    if (sec.hidden) return 0;
+
+    const group = (kind, title, blurb, all, empty) => {
+      const list = all.map((it, i) => ({ it, i })).filter(({ it }) => match(it));
+      if (q && !list.length) return '';
+      return `<div class="vgroup"><h3 class="vgroup-title">${title}<small>${blurb}</small></h3>${
+        list.length ? shelfRows(kind, list, cols, gap) : `<p class="wall-note">${empty}</p>`}</div>`;
+    };
+    let html = '', n = 0;
+    html += group('worth', 'Worth owning', 'Albums you keep playing start to finish that aren’t on your shelf yet',
+      worth, 'Play albums start to finish and the ones you keep coming back to will show up here.');
+    n += worth.length;
+    if (!connected) {
+      html += `<div class="vconnect"><b>Bring in your record collection</b><p>Connect Discogs to see the records you own here, mark them on your wall, and keep owned albums out of “Worth owning”.</p><button class="btn primary" id="vConnect">Connect Discogs</button></div>`;
+    } else if (!d) {
+      html += `<p class="wall-note">${Discogs.isSyncing() ? 'Pulling your collection from Discogs…' : 'Your Discogs collection hasn’t synced yet.'}</p>`;
+    } else {
+      html += group('owned', 'On your shelf', `From your Discogs collection${d.user !== 'demo' ? ` (${esc(d.user)})` : ''} · tap one to play it`,
+        lib.items.owned, 'No vinyl in your Discogs collection yet.');
+      html += group('wants', 'Wishlist', 'From your Discogs wantlist · tap one for pressings and shops',
+        lib.items.wants, d.wantsHidden ? 'Your Discogs wantlist is private — add a personal access token in Settings to see it.' : 'Nothing on your Discogs wantlist.');
+      n += lib.items.owned.length + lib.items.wants.length;
+    }
+    shelves.innerHTML = html;
+    const vc = $('vConnect'); if (vc) vc.onclick = () => { openSetup(); setTimeout(() => $('discogsUser').focus(), 50); };
+    return n || (q ? 0 : 1);
   }
 
   function coverHtml(kind, { it, i }) {
@@ -1378,8 +1648,12 @@
     const bg = it.cover && !it.cover.url ? it.cover.gradient : placeholder(it.id);
     const img = it.cover && it.cover.url ? `<img src="${esc(it.cover.url)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : '';
     const initial = esc((it.name || '?').trim().charAt(0).toUpperCase());
-    return `<button class="rec" data-kind="${kind}" data-i="${i}" data-uri="${esc(it.uri)}" style="--tilt:${tilt}deg" title="Play ${esc(it.name)}" aria-label="Play ${esc(it.name)}">
-      <span class="cover" style="background:${esc(bg)}">${it.cover ? '' : initial}${img}</span></button>`;
+    const own = kind === 'albums' ? Discogs.match({ name: it.name, artist: it.sub }) : kind === 'worth' ? { wanted: it.wanted } : {};
+    const sticker = own.owned ? '<span class="sticker owned" title="On your shelf">✓</span>' : own.wanted ? '<span class="sticker wanted" title="On your wishlist">♥</span>' : '';
+    const badge = it.badge ? `<span class="rec-badge">${esc(it.badge)}</span>` : '';
+    const verb = kind === 'worth' || kind === 'wants' ? 'Pressings for' : 'Play';
+    return `<button class="rec" data-kind="${kind}" data-i="${i}" data-uri="${esc(it.uri)}" style="--tilt:${tilt}deg" title="${verb} ${esc(it.name)}" aria-label="${verb} ${esc(it.name)}">
+      <span class="cover" style="background:${esc(bg)}">${it.cover ? '' : initial}${img}${badge}</span>${sticker}</button>`;
   }
 
   function markCurrentOnWall() {
@@ -1388,12 +1662,43 @@
     if (uri) document.querySelectorAll(`.rec[data-uri="${CSS.escape(uri)}"]`).forEach((r) => r.classList.add('current'));
   }
 
+  // a Discogs record → a Spotify album you've saved or spun
+  function findOnSpotify(a) {
+    const k = Discogs.keyOf(a.artist, a.name);
+    const saved = (lib.items.albums || []).find((x) => Discogs.keyOf(x.sub, x.name) === k);
+    if (saved) return saved.uri;
+    const spun = Object.values(Spins.all()).find((r) => r.uri && Discogs.keyOf(r.artist, r.name) === k);
+    if (spun) return spun.uri;
+    if (state.mode === 'demo') { const d = Demo.albums.find((x) => Discogs.keyOf(x.artist, x.name) === k); return d ? d.uri : null; }
+    return null;
+  }
+  async function playOwned(a) {
+    if (state.mode !== 'spotify') { toast(`“${a.name}” isn’t in the demo’s Spotify`); return; }
+    try {
+      const artist = (a.artist || '').split(', ')[0];
+      const r = await getJSON(`/search?type=album&limit=5&q=${encodeURIComponent(`album:${a.name} artist:${artist}`)}`);
+      const k = Discogs.keyOf(a.artist, a.name);
+      const hit = (r.albums?.items || []).filter(Boolean).find((x) => Discogs.keyOf((x.artists || []).map((y) => y.name).join(', '), x.name) === k) || (r.albums?.items || [])[0];
+      if (!hit) { toast(`Couldn’t find “${a.name}” on Spotify`); return; }
+      state.armParked = false;
+      source().play({ contextUri: hit.uri });
+      closePanel($('library'));
+      toast(`Putting on “${hit.name}”`, 2200);
+    } catch { toast(`Couldn’t search Spotify for “${a.name}”`); }
+  }
+
   let pulling = false;
   $('wallScroll').addEventListener('click', (e) => {
     const b = e.target.closest('[data-i][data-kind]'); if (!b || pulling) return;
     const it = (lib.items[b.dataset.kind] || [])[Number(b.dataset.i)]; if (!it) return;
+    if (b.dataset.kind === 'worth' || b.dataset.kind === 'wants') { openVinylFor(it.album); return; }
+    let uri = it.uri;
+    if (b.dataset.kind === 'owned') {
+      uri = findOnSpotify(it.album);
+      if (!uri) { playOwned(it.album); return; }
+    }
     state.armParked = false;
-    source().play({ contextUri: it.uri });
+    source().play({ contextUri: uri });
     // slide the record out of its sleeve, then head back to the turntable
     const rec = b.classList.contains('rec') ? b : $('wallScroll').querySelector(`.rec[data-kind="${b.dataset.kind}"][data-i="${b.dataset.i}"]`);
     if (!rec || matchMedia('(prefers-reduced-motion: reduce)').matches) { closePanel($('library')); return; }
@@ -1427,10 +1732,19 @@
     else if (location.protocol === 'http:' && !['127.0.0.1', '[::1]'].includes(location.hostname))
       msg = 'Spotify needs https:// for addresses other than 127.0.0.1. Host this page (e.g. GitHub Pages) to use it on your phone.';
     $('uriWarn').textContent = msg; $('uriWarn').classList.toggle('hidden', !msg);
+    const dc = Discogs.config() || {};
+    $('discogsUser').value = dc.user || ''; $('discogsToken').value = dc.token || '';
+    renderDiscogsStatus();
   }
   function openSetup() { updateDialog(); if (!dialog.open) dialog.showModal(); }
 
   $('settingsBtn').onclick = openSetup;
+  $('discogsSync').onclick = () => {
+    if (state.mode === 'demo') { toast('Demo mode uses a made-up collection — connect Spotify first'); return; }
+    if (!Discogs.setConfig($('discogsUser').value, $('discogsToken').value)) { toast('Enter your Discogs username'); return; }
+    Discogs.sync();
+  };
+  $('discogsClear').onclick = () => { Discogs.clear(); $('discogsUser').value = ''; $('discogsToken').value = ''; toast('Discogs disconnected'); };
   $('closeBtn').onclick = () => dialog.close();
   $('connectBtn').onclick = login;
   $('demoBtn').onclick = () => { dialog.close(); startDemo(); };
@@ -1558,6 +1872,7 @@
       state.mode = 'spotify'; store.set(LS.mode, 'spotify');
       onTrackChange();
       startPolling();
+      Discogs.maybeAutoSync();
       if (justLoggedIn) toast('Connected to Spotify');
     } else if (store.get(LS.mode) === 'demo' || params.has('demo')) {
       startDemo();

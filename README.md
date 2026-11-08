@@ -20,6 +20,14 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
   A segmented album bar shows the same thing; tap a segment to jump to that song.
 - **Tracklist** for the album you're listening to (a side panel; docked on wide screens). Tap any song to play it.
 - **Seek bar**: drag or click anywhere to jump within the song (arrow keys work when it's focused).
+- **My vinyl**: a third tab on the record wall that ties your streaming to your real collection.
+  - **Worth owning**: albums you keep playing start to finish that you don't own yet, ranked by how often. Tap one for
+    pressings and shops. A "full spin" counts when you hear at least 80% of an album's songs within six hours.
+  - **On your shelf** and **Wishlist**: your Discogs collection and wantlist (vinyl only). Tap an owned record to play
+    it on Spotify. Albums you own get a ✓ sticker on the wall, wishlist ones a ♥, and the now-playing pill says
+    "On your shelf".
+  - Connect in Settings with your Discogs username (public collections), or add a personal access token for a
+    private one. Listening stats stay in your browser.
 - **Record wall**: your saved albums and playlists on wooden shelves, with Albums / Playlists tabs and search
   (press `/`). Tap one and it slides out of its sleeve and goes on; the one playing is marked.
 - **Singles** show as a single, with just that song in the tracklist.
