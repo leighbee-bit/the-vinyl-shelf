@@ -24,6 +24,8 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
   (press `/`). Tap one and it slides out of its sleeve and goes on; the one playing is marked.
 - **Singles** show as a single, with just that song in the tracklist.
 - **Playing from**: a line above the song title says where it's playing from, e.g. "Playing from playlist · Road Trip".
+  Tap it to see Spotify's live queue for that playlist (shuffle and songs you've queued included); tap a song
+  to skip ahead to it, and × goes back to the album's tracklist.
 - **Now playing stand**: the album sleeve on a wooden ledge with the record peeking out.
 - **Turntable finishes**: Walnut, Oat, Clay, Charcoal, Oxblood, Rose quartz, Sage, Terracotta, Moss (in Settings).
 - **Vinyl crackle**: generated in the browser, plays only while the record spins (toggle with the wave button).

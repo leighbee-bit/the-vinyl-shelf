@@ -100,7 +100,7 @@
     else refreshAlbumMatch();
     setPlayIcon();
     renderContext();
-    if (tl.mode === 'queue') highlightQueue();
+    if (tl.mode === 'queue' && (track && track.id) !== prevId) refreshQueue();
   }
 
   const tl = { mode: 'album', uri: null, data: null, req: 0 };   // tracklist panel: album list or playlist queue
@@ -320,7 +320,7 @@
       `<li><button data-i="${i}"><span class="n">${i + 1}</span><span class="nm">${esc(t.name)}</span><span class="d">${fmt(t.durationMs)}</span></button></li>`).join('');
   }
   function highlightTracklist() {
-    if (tl.mode === 'queue') { highlightQueue(); return; }
+    if (tl.mode === 'queue') return;
     const a = state.album;
     const kind = !a ? 'album' : a.type === 'single' ? (a.tracks.length <= 3 ? 'single' : 'EP') : a.type === 'compilation' ? 'compilation' : 'album';
     $('tlKicker').textContent = state.albumMode ? `Now spinning · ${kind}` : `From the ${kind}`;
@@ -332,7 +332,7 @@
   $('tlList').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-i]');
     if (!b || b.disabled) return;
-    if (tl.mode === 'queue') source().play({ contextUri: tl.uri, offsetIndex: Number(b.dataset.i) });
+    if (tl.mode === 'queue') source().skipAhead(Number(b.dataset.i));
     else playAlbumTrack(Number(b.dataset.i));
   });
   function playAlbumTrack(i) {
@@ -768,26 +768,22 @@
       }).filter((it) => it.uri);
       return { items, next: data.next };
     },
-    async playlist(uri) {
+    // header for the queue view: the playlist's name, owner and cover (works for any playlist)
+    async playlistInfo(uri) {
       const id = uri.split(':').pop();
-      const p = await getJSON(`/playlists/${encodeURIComponent(id)}`);
+      const p = await getJSON(`/playlists/${encodeURIComponent(id)}?fields=name,images,owner(display_name)`);
       const img = pickImage(p.images, 300);
-      const base = { name: p.name, owner: p.owner?.display_name || '', cover: img ? { url: img } : null };
-      const map = (t) => ({ id: t.id || t.uri, uri: t.uri, name: t.name, artist: (t.artists || []).map((a) => a.name).join(', ') || t.show?.name || '', durationMs: t.duration_ms || 0 });
-      // Feb 2026: `tracks` → `items`, `track` → `item`; only sent for playlists you own or collaborate on
-      const page = p.items && Array.isArray(p.items.items) ? p.items : p.tracks && Array.isArray(p.tracks.items) ? p.tracks : null;
-      if (page) {
-        const rows = [...page.items];
-        let next = page.next;
-        while (next && rows.length < 1000) { const pg = await getJSON(next); rows.push(...(pg.items || [])); next = pg.next; }
-        return { ...base, tracks: rows.map((r) => r && (r.item || r.track)).filter((t) => t && t.uri).map(map) };
-      }
+      return { name: p.name, owner: p.owner?.display_name || '', cover: img ? { url: img } : null };
+    },
+    // Spotify's live queue: what's playing plus what comes next (shuffle, songs you queued, etc.)
+    async queue() {
       const q = await getJSON('/me/player/queue');
-      return {
-        ...base, upNext: true,
-        tracks: [q.currently_playing, ...(q.queue || [])].filter(Boolean).map(map),
-        note: 'Spotify only shares the full song list for playlists you own or collaborate on, so here’s what’s coming up next instead.',
-      };
+      const map = (t) => ({ id: t.id || t.uri, uri: t.uri, name: t.name, artist: (t.artists || []).map((a) => a.name).join(', ') || t.show?.name || '', durationMs: t.duration_ms || 0 });
+      return { now: q.currently_playing ? map(q.currently_playing) : null, next: (q.queue || []).filter((t) => t && t.uri).map(map) };
+    },
+    // Spotify has no "jump to queue item" call, so skip forward n times (like tapping next)
+    async skipAhead(n) {
+      for (let i = 0; i < n; i++) { if (!(await playerCall('POST', '/me/player/next'))) return; }
     },
     async contextName(uri) {
       const id = uri.split(':').pop();
@@ -889,13 +885,18 @@
           : playlists.map((p) => ({ id: p.id, uri: p.uri, name: p.name, sub: `Demo playlist · ${p.refs.length} songs`, cover: albums[p.refs[0][0]].cover })),
       }),
       contextName: async (uri) => (playlists.find((p) => p.uri === uri) || {}).name,
-      async playlist(uri) {
+      async playlistInfo(uri) {
         const p = playlists.find((x) => x.uri === uri);
-        return {
-          name: p.name, owner: 'Demo', cover: albums[p.refs[0][0]].cover,
-          tracks: p.refs.map(([ai, ti]) => { const a = albums[ai], t = a.tracks[ti]; return { id: t.id, uri: t.uri, name: t.name, artist: a.artist, durationMs: t.durationMs }; }),
-        };
+        return { name: p.name, owner: 'Demo', cover: albums[p.refs[0][0]].cover };
       },
+      async queue() {
+        const row = ({ a, t }) => ({ id: t.id, uri: t.uri, name: t.name, artist: a.artist, durationMs: t.durationMs });
+        if (!queue.length) return { now: null, next: [] };
+        const next = [];
+        for (let i = 1; i < Math.min(queue.length, 20); i++) next.push(row(queue[(qi + i) % queue.length]));
+        return { now: row(queue[qi]), next };
+      },
+      async skipAhead(n) { for (let i = 0; i < n; i++) this.step(1); },
       // made-up pressings so the vinyl panel can be explored offline
       async vinyl(a) {
         await new Promise((r) => setTimeout(r, 500));
@@ -1204,46 +1205,54 @@
   document.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => closePanel(b.closest('.panel')); });
 
   // ---------------------------------------------------------------- playlist queue in the tracklist panel
-  const plCache = new Map();
+  // Shows Spotify's live queue (shuffle, songs you added, etc.), refreshed on every song change and every 10s.
+  const plInfo = new Map();
+  let queueTimer = null;
   async function openQueue() {
     const c = state.context;
     if (!c || c.type !== 'playlist') return;
-    Object.assign(tl, { mode: 'queue', uri: c.uri, data: null });
+    Object.assign(tl, { mode: 'queue', uri: c.uri, data: null, info: plInfo.get(c.uri) || null });
     document.body.classList.add('tl-queue');
     renderQueue();
     if (!isDocked()) openPanel($('tracklist'));
+    if (!tl.info) {
+      const uri = c.uri;
+      source().playlistInfo(uri).then((info) => { plInfo.set(uri, info); if (tl.mode === 'queue' && tl.uri === uri) { tl.info = info; renderQueue(); } }).catch(() => {});
+    }
+    refreshQueue();
+    clearInterval(queueTimer);
+    queueTimer = setInterval(() => { if (isTracklistVisible() && !document.hidden) refreshQueue(); }, 10e3);
+  }
+  async function refreshQueue() {
+    if (tl.mode !== 'queue') return;
     const req = ++tl.req;
     try {
-      let hit = plCache.get(c.uri);
-      if (!hit || Date.now() - hit.at > (hit.data.upNext ? 15e3 : 5 * 60e3)) { hit = { at: Date.now(), data: await source().playlist(c.uri) }; plCache.set(c.uri, hit); }
-      if (req === tl.req && tl.mode === 'queue') { tl.data = hit.data; renderQueue(); }
-    } catch { if (req === tl.req && tl.mode === 'queue') { tl.data = { error: true }; renderQueue(); } }
+      const data = await source().queue();
+      if (req === tl.req && tl.mode === 'queue') { tl.data = data; renderQueue(); }
+    } catch { if (req === tl.req && tl.mode === 'queue' && !tl.data) { tl.data = { error: true }; renderQueue(); } }
   }
   function closeQueue() {
     if (tl.mode !== 'queue') return;
-    Object.assign(tl, { mode: 'album', uri: null, data: null }); tl.req++;
+    clearInterval(queueTimer); queueTimer = null;
+    Object.assign(tl, { mode: 'album', uri: null, data: null, info: null }); tl.req++;
     document.body.classList.remove('tl-queue');
     if (state.album) { renderTracklist(); highlightTracklist(); } else closePanel($('tracklist'));
   }
   function renderQueue() {
-    const d = tl.data, list = $('tlList');
-    $('tlKicker').textContent = d && d.upNext ? 'Up next' : 'Playlist';
-    $('tlTitle').textContent = (d && d.name) || ctxNames.get(tl.uri) || 'Playlist';
-    $('tlCover').style.backgroundImage = d && d.cover ? coverCss(d.cover) : '';
-    if (!d) { $('tlSub').textContent = ''; list.innerHTML = '<li class="tl-note">Pulling the songs from Spotify…</li>'; return; }
-    if (d.error) { $('tlSub').textContent = ''; list.innerHTML = '<li class="tl-note">Couldn’t load this playlist right now.</li>'; return; }
-    $('tlSub').textContent = d.upNext ? 'Your Spotify queue' : [d.owner, `${d.tracks.length} songs`].filter(Boolean).join(' · ');
-    list.innerHTML = (d.note ? `<li class="tl-note">${esc(d.note)}</li>` : '') + d.tracks.map((t, i) =>
-      `<li><button data-i="${i}" ${d.upNext ? 'disabled' : ''}><span class="n">${i + 1}</span><span class="nm">${esc(t.name)}<small>${esc(t.artist)}</small></span><span class="d">${t.durationMs ? fmt(t.durationMs) : ''}</span></button></li>`).join('');
-    highlightQueue();
-  }
-  function highlightQueue() {
-    const d = tl.data, t = state.track;
-    if (!d || !d.tracks) return;
-    const idx = t ? d.tracks.findIndex((x) => x.uri === t.uri || x.id === t.id) : -1;
-    const lis = [...$('tlList').querySelectorAll('li:not(.tl-note)')];
-    lis.forEach((li, i) => li.classList.toggle('current', i === idx));
-    if (lis[idx] && isTracklistVisible()) lis[idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const d = tl.data, info = tl.info, list = $('tlList');
+    $('tlKicker').textContent = 'Playlist queue';
+    $('tlTitle').textContent = (info && info.name) || ctxNames.get(tl.uri) || 'Playlist';
+    $('tlCover').style.backgroundImage = info && info.cover ? coverCss(info.cover) : '';
+    $('tlSub').textContent = info && info.owner ? `${info.owner} · live from Spotify` : 'Live from Spotify';
+    if (!d) { list.innerHTML = '<li class="tl-note">Checking your Spotify queue…</li>'; return; }
+    if (d.error) { list.innerHTML = '<li class="tl-note">Couldn’t load your queue right now.</li>'; return; }
+    const row = (t, i, label) =>
+      `<li${i === 0 ? ' class="current"' : ''}><button data-i="${i}"${i === 0 ? ' disabled' : ''}><span class="n">${label}</span><span class="nm">${esc(t.name)}<small>${esc(t.artist)}</small></span><span class="d">${t.durationMs ? fmt(t.durationMs) : ''}</span></button></li>`;
+    let html = '';
+    if (d.now) html += '<li class="tl-note tl-head">Now playing</li>' + row(d.now, 0, '♪');
+    html += d.next.length ? '<li class="tl-note tl-head">Next up</li>' + d.next.map((t, i) => row(t, i + 1, i + 1)).join('')
+      : '<li class="tl-note">Nothing queued after this song.</li>';
+    list.innerHTML = html;
   }
   const ctxEl = $('ctxLine');
   const onCtx = () => {

@@ -677,3 +677,7 @@ input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; 
 }
 .tl button:disabled { cursor: default; }
 .tl button:disabled:hover { background: none; }
+
+/* section headings in the live playlist queue */
+.tl-note.tl-head { padding: 12px 12px 4px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.tl li.current button:disabled:hover { background: rgba(255,255,255,.1); }
