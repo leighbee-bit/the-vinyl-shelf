@@ -1,4 +1,4 @@
-# Turntable — a record player visualizer for Spotify
+# The Vinyl Shelf — a record player visualizer for Spotify
 
 A web app that shows what you're playing on Spotify as a record spinning in a cosy listening room.
 Works on your computer and on iPhone (add it to your Home Screen and it opens full-screen like an app).
