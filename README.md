@@ -28,6 +28,12 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
     "On your shelf".
   - Connect in Settings with your Discogs username (public collections), or add a personal access token for a
     private one. Listening stats stay in your browser.
+  - **Last.fm history** (Settings → Listening history): import your top albums from Last.fm so "Worth owning" is
+    filled from day one. Full plays are estimated as album scrobbles ÷ songs on the album (shown with ≈).
+    Needs your Last.fm username and a free API key from https://www.last.fm/api/account/create.
+- **Sides**: albums are split into Side A and Side B (four sides for long albums) by running time. The needle
+  travels across one side at a time, and at the end of a side playback stops so you can flip the record
+  (tap the prompt, or press Space). Turn it off in Settings → Sound.
 - **Record wall**: your saved albums and playlists on wooden shelves, with Albums / Playlists tabs and search
   (press `/`). Tap one and it slides out of its sleeve and goes on; the one playing is marked.
 - **Singles** show as a single, with just that song in the tracklist.

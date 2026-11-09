@@ -11,7 +11,7 @@
 <title>The Vinyl Shelf</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<link rel="stylesheet" href="styles.css?v=2026-11-08c">
+<link rel="stylesheet" href="styles.css?v=2026-11-08f">
 </head>
 <body>
 
@@ -124,6 +124,7 @@
   <!-- ===================== main ===================== -->
   <main class="app">
     <div class="deck" id="deck">
+      <button class="flip-btn" id="flipBtn" aria-live="polite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 0 1 7.7 5.8l1.8-1.1.9 1.7-4.5 2.6-2.6-4.5 1.7-1 .9 1.5A6 6 0 0 0 6.3 9.6L4.4 9A8 8 0 0 1 12 4zm-7.4 7.4 4.5-2.6 2.6 4.5-1.7 1-.9-1.5a6 6 0 0 0 11.6-.4l1.9.6A8 8 0 0 1 4.3 14.2l-1.8 1.1-.9-1.7z"/></svg><span id="flipText">Flip the record</span></button>
       <div class="turntable" id="turntable" title="Double-click to show just the record">
        <div class="front" aria-hidden="true">
          <div class="grille"></div>
@@ -381,6 +382,28 @@
       <p class="hint">Only vinyl is shown. Your listening stats stay in this browser.</p>
     </section>
 
+    <section id="lastfmSec">
+      <h3>Listening history</h3>
+      <p id="lastfmStatus">Bring in years of listening so “Worth owning” is filled from day one.</p>
+      <details class="mini">
+        <summary>How to connect Last.fm</summary>
+        <ol class="hint">
+          <li>If you haven’t already, link Spotify to Last.fm (Last.fm → Settings → Applications → Spotify Scrobbling) so it records what you play.</li>
+          <li>Create a free API key at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">last.fm/api/account/create</a>. Any app name works; leave the callback URL blank.</li>
+          <li>Paste your username and the <b>API key</b> (not the shared secret) below.</li>
+        </ol>
+      </details>
+      <label class="field" for="lastfmUser">Last.fm username</label>
+      <input type="text" id="lastfmUser" placeholder="e.g. vinylfan88" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <label class="field" for="lastfmKey">Last.fm API key</label>
+      <input type="text" id="lastfmKey" placeholder="32 letters and numbers" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="row">
+        <button class="btn primary" id="lastfmImport">Import history</button>
+        <button class="btn hidden" id="lastfmClear">Disconnect</button>
+      </div>
+      <p class="hint">Full plays are estimated: an album’s plays divided by its number of songs.</p>
+    </section>
+
     <section>
       <h3>Turntable finish</h3>
       <div class="swatches" id="swatches"></div>
@@ -389,11 +412,12 @@
     <section>
       <h3>Sound</h3>
       <label class="check"><input type="checkbox" id="crackleToggle"> Vinyl crackle while a song plays</label>
+      <label class="check"><input type="checkbox" id="flipToggle"> Stop at the end of each side so you can flip the record</label>
       <div class="vol"><span>Crackle level</span><input type="range" id="crackleVol" min="0" max="1" step="0.01"></div>
       <p class="hint">The crackle plays from this device, layered over Spotify. On iPhone, switch off silent mode to hear it.</p>
     </section>
   </dialog>
 
-<script src="app.js?v=2026-11-08c"></script>
+<script src="app.js?v=2026-11-08f"></script>
 </body>
 </html>

@@ -21,7 +21,7 @@
   const ARM_VEC_DEG = Math.atan2(58, 2) * 180 / Math.PI; // direction of the arm (pivot → needle) at 0°
   const LS = {
     client: 'tt.clientId', tokens: 'tt.tokens', verifier: 'tt.verifier', mode: 'tt.mode',
-    finish: 'tt.finish', crackle: 'tt.crackle', vol: 'tt.crackleVol',
+    finish: 'tt.finish', crackle: 'tt.crackle', vol: 'tt.crackleVol', flip: 'tt.flip',
   };
   const FINISHES = [
     ['walnut', 'Walnut'], ['oat', 'Oat'], ['clay', 'Clay'], ['charcoal', 'Charcoal'], ['oxblood', 'Oxblood'],
@@ -246,12 +246,83 @@
     document.querySelectorAll('#speedSw i').forEach((i) => i.classList.toggle('on', i.dataset.rpm === (is45 ? '45' : '33')));
     state.cum = []; state.albumTotal = 0;
     if (state.album) for (const tr of state.album.tracks) { state.cum.push(state.albumTotal); state.albumTotal += tr.durationMs; }
+    state.sides = state.album ? splitSides(state.album.tracks, state.cum, state.albumTotal) : null;
+    cancelFlip();
     document.body.classList.toggle('has-album', !!state.album);
     if (!state.album) closePanel($('tracklist'));
     renderTracklist();
     refreshAlbumMatch(true);
     onAlbumForVinyl(state.album);
   }
+
+  // ---------------------------------------------------------------- sides: an LP holds ~20 minutes a side
+  // Spotify doesn't know where the sides break, so split by running time into 2 sides (4 for a double LP…),
+  // keeping whole songs together and the sides as even as possible.
+  function splitSides(tracks, cum, total) {
+    if (tracks.length < 4) return null;
+    const n = Math.min(8, Math.max(2, 2 * Math.ceil(total / (2 * 26 * 60e3))), tracks.length);
+    const sides = []; let start = 0;
+    for (let k = 1; k <= n; k++) {
+      let end = tracks.length;
+      if (k < n) {
+        const target = total * k / n;
+        end = start + 1;
+        while (end < tracks.length - (n - k) && Math.abs(cum[end + 1] - target) < Math.abs(cum[end] - target)) end++;
+      }
+      const base = cum[start], stop = end < tracks.length ? cum[end] : total;
+      sides.push({ start, end, base, total: stop - base, letter: String.fromCharCode(65 + k - 1) });
+      start = end;
+    }
+    return sides;
+  }
+  const sideIndexOf = (i) => (state.sides ? Math.max(0, state.sides.findIndex((sd) => i >= sd.start && i < sd.end)) : 0);
+  // the part of the album the needle travels across right now: the current side, or the whole album
+  function needleSpan() {
+    if (state.sides && state.trackIndex >= 0) return state.sides[sideIndexOf(state.trackIndex)];
+    return { start: 0, end: state.album ? state.album.tracks.length : 0, base: 0, total: state.albumTotal, letter: '' };
+  }
+
+  // ---------------------------------------------------------------- flipping the record between sides
+  const flip = { pending: null, userNavAt: 0 };
+  const flipOn = () => store.get(LS.flip) !== '0';
+  const noteUserNav = () => { flip.userNavAt = performance.now(); };
+  function sideDone(nextIndex) {
+    const a = state.album, sd = state.sides[sideIndexOf(nextIndex)];
+    flip.pending = { albumId: a.id, nextIndex, letter: sd.letter, from: state.sides[sideIndexOf(nextIndex) - 1].letter };
+    if (state.isPlaying) togglePlay();
+    state.armParked = true;
+    $('flipText').innerHTML = `Side ${flip.pending.from} is over · <b>Flip to Side ${sd.letter}</b>`;
+    $('flipBtn').classList.add('show');
+  }
+  function cancelFlip() {
+    if (!flip.pending) return;
+    flip.pending = null;
+    $('flipBtn').classList.remove('show');
+  }
+  function flipSide() {
+    const f = flip.pending, a = state.album;
+    if (!f || !a || a.id !== f.albumId) { cancelFlip(); return; }
+    cancelFlip();
+    const platter = document.querySelector('.platter');
+    platter.classList.remove('flipping'); void platter.offsetWidth; platter.classList.add('flipping');
+    $('label').dataset.side = f.letter;
+    noteUserNav();
+    setTimeout(() => {
+      state.armParked = false;
+      source().play({ contextUri: a.uri, offsetIndex: f.nextIndex });
+    }, 900);
+    setTimeout(() => platter.classList.remove('flipping'), 1300);
+  }
+  // stop just before the last song of a side runs out. A timer, not the animation loop, so it still
+  // works when this tab is in the background (browsers slow timers there to ~1/s, hence the 1.5s margin).
+  function watchSideEnd() {
+    if (!flipOn() || flip.pending || !state.albumMode || !state.sides || !state.isPlaying || seekDrag.active || armDrag.active) return;
+    const si = sideIndexOf(state.trackIndex), sd = state.sides[si];
+    if (si >= state.sides.length - 1 || state.trackIndex !== sd.end - 1) return;
+    const dur = state.track.durationMs;
+    if (dur && dur - currentProgress() < 1500) sideDone(sd.end);
+  }
+  setInterval(watchSideEnd, 250);
 
   function refreshAlbumMatch(force) {
     const a = state.album, t = state.track;
@@ -263,13 +334,23 @@
     }
     const albumMode = !!(a && idx >= 0 && state.context && state.context.type === 'album');
     if (!force && idx === state.trackIndex && albumMode === state.albumMode) return;
+    const prevIdx = state.trackIndex;
     state.trackIndex = idx; state.albumMode = albumMode;
+    if (flip.pending && ((idx !== flip.pending.nextIndex - 1 && idx !== flip.pending.nextIndex) || !albumMode)) cancelFlip();
+    // Spotify slipped onto the next side before we could pause: stop at the top of it and offer the flip
+    if (albumMode && state.sides && flipOn() && !flip.pending && idx > 0 && prevIdx === idx - 1 && state.isPlaying
+        && sideIndexOf(idx) !== sideIndexOf(prevIdx) && performance.now() - flip.userNavAt > 5000 && currentProgress() < 15000) {
+      sideDone(idx);
+      seekTo(0);
+    }
+    $('label').dataset.side = albumMode && state.sides ? state.sides[sideIndexOf(idx)].letter : '';
     renderGrooves(); renderAlbumBar(); highlightTracklist();
   }
 
   // groove gaps on the record line up with the real track breaks when an album is playing
   function renderGrooves() {
-    const fracs = state.albumMode ? state.cum.slice(1).map((c) => c / state.albumTotal) : [.21, .43, .63, .82];
+    let fracs = [.21, .43, .63, .82];
+    if (state.albumMode) { const sp = needleSpan(); fracs = state.cum.slice(sp.start + 1, sp.end).map((c) => (c - sp.base) / sp.total); }
     const radii = fracs.map((f) => R_OUT - f * (R_OUT - R_IN)).sort((a, b) => a - b);
     const stops = ['transparent 0%'];
     for (const r of radii) {
@@ -297,7 +378,8 @@
     if (!on) return;
     state.album.tracks.forEach((t, i) => {
       const seg = document.createElement('button');
-      seg.className = 'seg' + (i < state.trackIndex ? ' done' : '') + (i === state.trackIndex ? ' current' : '');
+      seg.className = 'seg' + (i < state.trackIndex ? ' done' : '') + (i === state.trackIndex ? ' current' : '')
+        + (state.sides && i > 0 && state.sides.some((sd) => sd.start === i) ? ' side-start' : '');
       seg.style.flexGrow = String(Math.max(1, t.durationMs));
       seg.title = `${i + 1}. ${t.name}  (${fmt(t.durationMs)})`;
       seg.setAttribute('aria-label', `Play track ${i + 1}: ${t.name}`);
@@ -337,6 +419,7 @@
   });
   function playAlbumTrack(i) {
     const a = state.album; if (!a) return;
+    noteUserNav(); cancelFlip();
     source().play({ contextUri: a.uri, offsetIndex: i });
   }
 
@@ -374,7 +457,8 @@
     if (armDrag.active) armTarget = armDrag.angle;
     else if (now < armHold.until) armTarget = armHold.angle;
     else if (t && !(state.armParked && !state.isPlaying)) {
-      const f = state.albumMode ? (state.cum[state.trackIndex] + prog) / state.albumTotal : (dur ? prog / dur : 0);
+      const sp = state.albumMode ? needleSpan() : null;
+      const f = sp ? (state.cum[state.trackIndex] - sp.base + prog) / sp.total : (dur ? prog / dur : 0);
       armTarget = armAngleFor(f);
     }
     armAngle = armDrag.active ? armTarget : armAngle + (armTarget - armAngle) * Math.min(1, dt * (seekDrag.active ? 8 : 2.4));
@@ -407,7 +491,8 @@
       $('seek').setAttribute('aria-valuetext', `${fmt(prog)} of ${fmt(dur)}`);
       if (state.albumMode) {
         const el = state.cum[state.trackIndex] + prog;
-        $('albumLabel').innerHTML = `<span>Track <b>${state.trackIndex + 1}</b> of ${state.album.tracks.length}</span><span>${fmt(el)} / ${fmt(state.albumTotal)}</span>`;
+        const side = state.sides ? `Side <b>${state.sides[sideIndexOf(state.trackIndex)].letter}</b> · ` : '';
+        $('albumLabel').innerHTML = `<span>${side}Track <b>${state.trackIndex + 1}</b> of ${state.album.tracks.length}</span><span>${fmt(el)} / ${fmt(state.albumTotal)}</span>`;
       }
     }
 
@@ -458,6 +543,7 @@
   function togglePlay() {
     if (state.mode === 'idle') { openSetup(); return; }
     const wasPlaying = state.isPlaying;
+    if (!wasPlaying && flip.pending) { flipSide(); return; }
     if (!state.track && state.mode === 'demo') { Demo.play({ contextUri: Demo.albums[0].uri }); return; }
     state.progressMs = currentProgress(); state.syncedAt = performance.now();
     state.isPlaying = !wasPlaying && !!state.track; setPlayIcon();
@@ -465,6 +551,7 @@
   }
   function skip(dir) {
     if (state.mode === 'idle') { openSetup(); return; }
+    noteUserNav(); cancelFlip();
     if (state.mode === 'demo') { Demo.step(dir); return; }
     playerCall('POST', dir > 0 ? '/me/player/next' : '/me/player/previous');
   }
@@ -497,8 +584,8 @@
   function cueFor(frac) {
     const t = state.track;
     if (state.albumMode) {
-      const el = frac * state.albumTotal;
-      let i = 0; while (i < state.cum.length - 1 && state.cum[i + 1] <= el) i++;
+      const sp = needleSpan(), el = sp.base + frac * sp.total;
+      let i = sp.start; while (i < sp.end - 1 && state.cum[i + 1] <= el) i++;
       return { i, ms: el - state.cum[i], name: state.album.tracks[i].name };
     }
     return { i: state.trackIndex, ms: frac * t.durationMs, name: t.name };
@@ -548,6 +635,7 @@
   async function dropNeedle(frac, angle) {
     const c = cueFor(frac);
     state.armParked = false;
+    noteUserNav(); cancelFlip();
     if (state.albumMode && c.i !== state.trackIndex) {
       // a different song on this album: start it from the spot the needle landed on
       armHold.angle = angle; armHold.until = performance.now() + 4000;
@@ -615,6 +703,9 @@
   };
   $('crackleBtn').onclick = () => { crackle.setEnabled(!crackle.enabled); toast(crackle.enabled ? 'Crackle on' : 'Crackle off', 1500); };
   $('crackleToggle').onchange = (e) => crackle.setEnabled(e.target.checked);
+  $('flipToggle').checked = flipOn();
+  $('flipToggle').onchange = (e) => { store.set(LS.flip, e.target.checked ? '1' : '0'); if (!e.target.checked) cancelFlip(); };
+  $('flipBtn').onclick = flipSide;
   $('crackleVol').value = String(crackle.volume);
   $('crackleVol').oninput = (e) => crackle.setVolume(Number(e.target.value));
   crackle.setEnabled(crackle.enabled);
@@ -1247,6 +1338,98 @@
     };
   })();
 
+  // Last.fm: your listening history from before this app existed. Spotify can send every play to Last.fm
+  // ("scrobbling"), so years of history are there. We read your top albums and estimate how many times
+  // you've played each one through: album scrobbles ÷ songs on the album.
+  const LastFm = (() => {
+    const CFG = 'tt.lastfm', DATA = 'tt.lastfmData';
+    const read = (k) => { try { return JSON.parse(store.get(k) || 'null'); } catch { return null; } };
+    let data = read(DATA), busy = false, index = null, indexFor = null;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const DEMO = (() => {
+      const A = (i) => Demo.albums[i];
+      return {
+        user: 'demo', at: Date.now(), albums: [
+          { name: 'Glass Orchard', artist: 'Wren Hollis', plays: 108, tracks: 11, est: 9, cover: { gradient: 'linear-gradient(150deg,#cfe0b8,#7f9c6a 55%,#2f3f2a)' } },
+          { name: A(5).name, artist: A(5).artist, plays: 54, tracks: A(5).tracks.length, est: Math.floor(54 / A(5).tracks.length), cover: A(5).cover },
+          { name: 'Paper Weather', artist: 'The Low Fields', plays: 47, tracks: 9, est: 5, cover: { gradient: 'linear-gradient(150deg,#e3b3a0,#8e5a6a 60%,#3b2433)' } },
+          { name: A(1).name, artist: A(1).artist, plays: 62, tracks: A(1).tracks.length, est: Math.floor(62 / A(1).tracks.length), cover: A(1).cover },
+        ],
+      };
+    })();
+    const current = () => (state.mode === 'demo' ? DEMO : data);
+    function lookup(a) {
+      const d = current(); if (!d || !a) return null;
+      if (indexFor !== d) { index = new Map(d.albums.map((x) => [Discogs.keyOf(x.artist, x.name), x])); indexFor = d; }
+      return index.get(Discogs.keyOf(a.artist || a.sub, a.name)) || null;
+    }
+    async function call(params, key) {
+      const res = await fetch(`https://ws.audioscrobbler.com/2.0/?${new URLSearchParams({ ...params, api_key: key, format: 'json' })}`);
+      const j = await res.json().catch(() => ({}));
+      if (j.error || !res.ok) { const e = new Error(j.message || `Last.fm ${res.status}`); e.code = j.error; throw e; }
+      return j;
+    }
+    const bestImage = (imgs) => { const u = [...(imgs || [])].reverse().map((i) => i['#text']).find((u) => u && !/2a96cbd8b46e442fc41c2b86b821562f/.test(u)); return u ? { url: u } : null; };
+    async function importHistory({ quiet = false } = {}) {
+      const c = read(CFG);
+      if (!c || !c.user || !c.key || busy) return;
+      busy = true; renderLastFmStatus('Reading your top albums…');
+      try {
+        const top = await call({ method: 'user.gettopalbums', user: c.user, period: 'overall', limit: 150 }, c.key);
+        const list = (top.topalbums?.album || []).filter((a) => Number(a.playcount) >= 8).slice(0, 120);
+        const albums = [];
+        for (let i = 0; i < list.length; i++) {
+          const a = list[i], artist = a.artist?.name || '';
+          let n = 0;
+          try {
+            const info = await call({ method: 'album.getinfo', artist, album: a.name, autocorrect: 1 }, c.key);
+            const t = info.album?.tracks?.track; n = Array.isArray(t) ? t.length : t ? 1 : 0;
+          } catch {}
+          const plays = Number(a.playcount);
+          albums.push({ name: a.name, artist, plays, tracks: n, est: n >= 4 ? Math.floor(plays / n) : 0, cover: bestImage(a.image) });
+          if (i % 5 === 4) renderLastFmStatus(`Counting songs per album… ${i + 1} of ${list.length}`);
+          await sleep(220);                          // stay well under Last.fm's rate limit
+        }
+        data = { user: c.user, at: Date.now(), albums };
+        store.set(DATA, JSON.stringify(data));
+        const n = albums.filter((x) => x.est >= 3).length;
+        if (!quiet) toast(`Imported your Last.fm history — ${n} albums you’ve played through 3+ times`, 5000);
+      } catch (e) {
+        const why = e.code === 6 ? `Last.fm doesn’t know the user “${c.user}”.` : e.code === 10 || e.code === 26 ? 'That Last.fm API key isn’t valid.' : e.code === 17 ? 'That Last.fm profile hides its listening history.' : 'Couldn’t reach Last.fm right now.';
+        busy = false; renderLastFmStatus(why); toast(why, 6000);
+        return;
+      }
+      busy = false; renderLastFmStatus(); renderVinyl();
+      if (wallOpen()) renderWall();
+    }
+    function setConfig(user, key) {
+      user = (user || '').trim().replace(/^.*last\.fm\/user\//i, '').replace(/\/.*$/, ''); key = (key || '').trim();
+      if (!user || !key) return false;
+      const prev = read(CFG) || {};
+      store.set(CFG, JSON.stringify({ user, key }));
+      if (prev.user !== user) { data = null; store.del(DATA); }
+      return true;
+    }
+    function clear() { store.del(CFG); store.del(DATA); data = null; renderLastFmStatus(); renderVinyl(); if (wallOpen()) renderWall(); }
+    return {
+      lookup, importHistory, setConfig, clear, data: current, config: () => read(CFG), isBusy: () => busy,
+      maybeAutoImport() { const c = read(CFG); if (c && (!data || data.user !== c.user || Date.now() - data.at > 7 * 864e5)) importHistory({ quiet: true }); },
+    };
+  })();
+
+  function renderLastFmStatus(msg) {
+    const el = $('lastfmStatus'); if (!el) return;
+    const c = LastFm.config(), d = LastFm.data();
+    $('lastfmClear').classList.toggle('hidden', !c);
+    $('lastfmImport').textContent = c ? 'Import again' : 'Import history';
+    if (msg) { el.textContent = msg; return; }
+    if (state.mode === 'demo') { el.textContent = 'Demo mode — showing made-up listening history.'; return; }
+    if (!c) { el.textContent = 'Bring in years of listening so “Worth owning” is filled from day one.'; return; }
+    if (!d) { el.textContent = `Connected as ${c.user}. Not imported yet.`; return; }
+    const n = d.albums.filter((x) => x.est >= 3).length;
+    el.textContent = `${d.albums.length} top albums from ${d.user} · ${n} played through 3+ times · imported ${new Date(d.at).toLocaleDateString()}`;
+  }
+
   function renderDiscogsStatus(msg) {
     const el = $('discogsStatus'); if (!el) return;
     const c = Discogs.config(), d = Discogs.data();
@@ -1315,6 +1498,8 @@
     if (own.owned) bits.push(`<span class="own-tag owned">On your shelf</span>`);
     else if (own.wanted) bits.push(`<span class="own-tag wanted">On your wishlist</span>`);
     if (sp && sp.spins) bits.push(`<span class="own-spins">${sp.spins === 1 ? 'Played front to back once' : `Played front to back ${sp.spins} times`}</span>`);
+    const lf = LastFm.lookup(a);
+    if (lf && lf.est >= 1) bits.push(`<span class="own-spins">≈${lf.est} full plays on Last.fm (${lf.plays} scrobbles)</span>`);
     return bits.length ? `<div class="vp-own">${bits.join('')}</div>` : '';
   }
 
@@ -1499,7 +1684,7 @@
     if (state.mode === 'idle') { openSetup(); return; }
     openPanel(p); renderWall();
     KINDS.forEach((k) => { if (!lib.items[k]) loadAll(k); });
-    Discogs.maybeAutoSync();
+    Discogs.maybeAutoSync(); LastFm.maybeAutoImport();
   };
   $('libSearch').addEventListener('input', (e) => { lib.query = e.target.value; renderWall(); });
   function setWallTab(tab) {
@@ -1603,13 +1788,23 @@
       id: `dg:${r.id}`, uri: '', name: r.title, sub: [r.artist, r.year || ''].filter(Boolean).join(' · '), cover: r.cover,
       album: { id: `dg:${r.id}`, name: r.title, artist: r.artist, year: r.year ? String(r.year) : '', cover: r.cover, dgMaster: r.master }, kind,
     });
-    const worth = Object.entries(Spins.all())
-      .filter(([, r]) => r.spins >= 2 && !Discogs.match(r).owned)
-      .sort(([, a], [, b]) => b.spins - a.spins || b.last - a.last)
-      .map(([id, r]) => ({
-        id, uri: r.uri, name: r.name, sub: r.artist, cover: r.cover, badge: `${r.spins}× front to back`,
-        wanted: !!Discogs.match(r).wanted, album: { id, name: r.name, artist: r.artist, year: r.year, cover: r.cover, upc: r.upc },
-      }));
+    // albums tracked here, topped up with Last.fm estimates (whichever count is higher)
+    const byKey = new Map();
+    for (const [id, r] of Object.entries(Spins.all())) {
+      byKey.set(Discogs.keyOf(r.artist, r.name), { id, uri: r.uri, name: r.name, artist: r.artist, cover: r.cover, n: r.spins, approx: false, last: r.last || 0,
+        album: { id, name: r.name, artist: r.artist, year: r.year, cover: r.cover, upc: r.upc } });
+    }
+    for (const x of (LastFm.data() || {}).albums || []) {
+      if (x.est < 3) continue;
+      const k = Discogs.keyOf(x.artist, x.name), e = byKey.get(k);
+      if (e) { if (x.est > e.n) { e.n = x.est; e.approx = true; } if (!e.cover && x.cover) e.cover = x.cover; continue; }
+      const id = `lf:${k}`;
+      byKey.set(k, { id, uri: '', name: x.name, artist: x.artist, cover: x.cover, n: x.est, approx: true, last: 0, album: { id, name: x.name, artist: x.artist, cover: x.cover } });
+    }
+    const worth = [...byKey.values()]
+      .filter((e) => e.n >= 2 && !Discogs.match(e).owned)
+      .sort((a, b) => b.n - a.n || b.last - a.last)
+      .map((e) => ({ id: e.id, uri: e.uri, name: e.name, sub: e.artist, cover: e.cover, badge: `${e.approx ? '≈' : ''}${e.n}× front to back`, wanted: !!Discogs.match(e).wanted, album: e.album }));
     lib.items.worth = worth;
     lib.items.owned = ((d && d.owned) || []).map((r) => fromDg(r, 'owned'));
     lib.items.wants = ((d && d.wants) || []).map((r) => fromDg(r, 'wants'));
@@ -1624,8 +1819,11 @@
         list.length ? shelfRows(kind, list, cols, gap) : `<p class="wall-note">${empty}</p>`}</div>`;
     };
     let html = '', n = 0;
-    html += group('worth', 'Worth owning', 'Albums you keep playing start to finish that aren’t on your shelf yet',
-      worth, 'Play albums start to finish and the ones you keep coming back to will show up here.');
+    const lfOn = !!LastFm.data();
+    html += group('worth', 'Worth owning', `Albums you keep playing start to finish that aren’t on your shelf yet${lfOn ? ' · ≈ estimated from Last.fm' : ''}`,
+      worth, LastFm.isBusy() ? 'Importing your Last.fm history…' : 'Play albums start to finish and the ones you keep coming back to will show up here.');
+    if (!lfOn && !LastFm.config() && state.mode !== 'demo')
+      html += `<p class="wall-note vlf">Have years of listening on Last.fm? <button class="linkish" id="vLastfm">Import it</button> to fill this shelf now.</p>`;
     n += worth.length;
     if (!connected) {
       html += `<div class="vconnect"><b>Bring in your record collection</b><p>Connect Discogs to see the records you own here, mark them on your wall, and keep owned albums out of “Worth owning”.</p><button class="btn primary" id="vConnect">Connect Discogs</button></div>`;
@@ -1640,6 +1838,7 @@
     }
     shelves.innerHTML = html;
     const vc = $('vConnect'); if (vc) vc.onclick = () => { openSetup(); setTimeout(() => $('discogsUser').focus(), 50); };
+    const vl = $('vLastfm'); if (vl) vl.onclick = () => { openSetup(); setTimeout(() => $('lastfmUser').focus(), 50); };
     return n || (q ? 0 : 1);
   }
 
@@ -1735,6 +1934,9 @@
     const dc = Discogs.config() || {};
     $('discogsUser').value = dc.user || ''; $('discogsToken').value = dc.token || '';
     renderDiscogsStatus();
+    const lc = LastFm.config() || {};
+    $('lastfmUser').value = lc.user || ''; $('lastfmKey').value = lc.key || '';
+    renderLastFmStatus();
   }
   function openSetup() { updateDialog(); if (!dialog.open) dialog.showModal(); }
 
@@ -1744,6 +1946,12 @@
     if (!Discogs.setConfig($('discogsUser').value, $('discogsToken').value)) { toast('Enter your Discogs username'); return; }
     Discogs.sync();
   };
+  $('lastfmImport').onclick = () => {
+    if (state.mode === 'demo') { toast('Demo mode uses made-up history — connect Spotify first'); return; }
+    if (!LastFm.setConfig($('lastfmUser').value, $('lastfmKey').value)) { toast('Enter your Last.fm username and API key'); return; }
+    LastFm.importHistory();
+  };
+  $('lastfmClear').onclick = () => { LastFm.clear(); $('lastfmUser').value = ''; $('lastfmKey').value = ''; toast('Last.fm disconnected'); };
   $('discogsClear').onclick = () => { Discogs.clear(); $('discogsUser').value = ''; $('discogsToken').value = ''; toast('Discogs disconnected'); };
   $('closeBtn').onclick = () => dialog.close();
   $('connectBtn').onclick = login;
