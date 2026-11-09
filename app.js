@@ -344,7 +344,7 @@
       seekTo(0);
     }
     $('label').dataset.side = albumMode && state.sides ? state.sides[sideIndexOf(idx)].letter : '';
-    renderGrooves(); renderAlbumBar(); highlightTracklist();
+    renderGrooves(); renderAlbumBar(); highlightTracklist(); renderUpNext();
   }
 
   // groove gaps on the record line up with the real track breaks when an album is playing
@@ -496,7 +496,6 @@
       }
     }
 
-    crackle.update(Math.min(1, speed / 200));
     if (state.mode === 'demo') Demo.tick();
     requestAnimationFrame(frame);
   }
@@ -698,9 +697,15 @@
       const target = this.enabled ? this.volume * .9 * level : 0;
       if (Math.abs(target - this.target) < .01) return;
       this.target = target;
-      this.gain.gain.setTargetAtTime(target, this.ctx.currentTime, .08);
+      this.gain.gain.setTargetAtTime(target, this.ctx.currentTime, target > 0 ? .3 : .06);   // ease in, cut quickly
     },
   };
+  // a song is sounding: Spotify says playing, and we're not past its end (the next poll may not have landed yet)
+  const soundingNow = () => state.isPlaying && !!state.track && !flip.pending
+    && (!state.track.durationMs || state.track.durationMs < 2 || currentProgress() < state.track.durationMs + 1500);
+  // a timer, not the animation loop, drives the crackle: browsers pause animation in background tabs and
+  // covered windows, which used to leave the crackle running after Spotify stopped
+  setInterval(() => crackle.update(soundingNow() ? 1 : 0), 250);
   $('crackleBtn').onclick = () => { crackle.setEnabled(!crackle.enabled); toast(crackle.enabled ? 'Crackle on' : 'Crackle off', 1500); };
   $('crackleToggle').onchange = (e) => crackle.setEnabled(e.target.checked);
   $('flipToggle').checked = flipOn();
@@ -892,7 +897,8 @@
   function startPolling() { stopPolling(); poll(); pollTimer = setInterval(poll, POLL_MS); }
   function stopPolling() { clearInterval(pollTimer); pollTimer = null; }
   async function poll() {
-    if (state.mode !== 'spotify' || document.hidden || Date.now() < backoffUntil || seekDrag.active) return;
+    // in a background tab we only keep asking while the crackle is on, so it can stop when Spotify stops
+    if (state.mode !== 'spotify' || (document.hidden && !crackle.enabled) || Date.now() < backoffUntil || seekDrag.active) return;
     try {
       const res = await api('/me/player/currently-playing?additional_types=episode');
       if (res.status === 429) { backoffUntil = Date.now() + (Number(res.headers.get('Retry-After')) || 10) * 1000; return; }
@@ -2119,8 +2125,8 @@
     document.body.classList.remove('idle');
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (state.isPlaying && !dialog.open && !document.querySelector('.panel.open') && !seekDrag.active) document.body.classList.add('idle');
-    }, 6000);
+      if ((state.isPlaying || document.body.classList.contains('tv')) && !dialog.open && !document.querySelector('.panel.open') && !seekDrag.active) document.body.classList.add('idle');
+    }, document.body.classList.contains('tv') ? 3000 : 6000);
   }
   ['mousemove', 'pointerdown', 'keydown', 'wheel'].forEach((ev) => addEventListener(ev, wake, { passive: true }));
   wake();
@@ -2144,6 +2150,10 @@
     }
     if (e.key === '/' && wallOpen()) { e.preventDefault(); $('libSearch').focus(); return; }
     if (e.code === 'Space' && e.target.tagName !== 'BUTTON') { e.preventDefault(); togglePlay(); }
+    else if (e.key === 'Enter' && document.body.classList.contains('tv') && !(e.target instanceof Element && e.target.closest('button, a, [role=button], [tabindex]'))) { e.preventDefault(); togglePlay(); }
+    else if (e.key === 'MediaPlayPause' || e.key === 'MediaPlay' || e.key === 'MediaPause') { e.preventDefault(); if ((e.key === 'MediaPlay') !== state.isPlaying || e.key === 'MediaPlayPause') togglePlay(); }
+    else if (e.key === 'MediaTrackNext') skip(1);
+    else if (e.key === 'MediaTrackPrevious') skip(-1);
     else if (e.key === 'ArrowRight') skip(1);
     else if (e.key === 'ArrowLeft') skip(-1);
     else if (e.key === 'f') toggleFullscreen();
@@ -2165,6 +2175,47 @@
   }
   $('fsBtn').onclick = toggleFullscreen;
 
+  // ================================================================ TV mode (?tv): big-screen layout for TVs, casting and mirroring
+  const tvMode = new URLSearchParams(location.search).has('tv');
+  if (tvMode) {
+    document.body.classList.add('tv');
+    // clock in the corner
+    const clock = () => { $('tvClock').textContent = new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
+    clock(); setInterval(clock, 15e3);
+    // fullscreen needs a click or key press first
+    const hint = $('tvHint');
+    if (fsSupported) { hint.classList.add('show'); setTimeout(() => hint.classList.remove('show'), 9000); } else hint.remove();
+    const goFull = () => {
+      hint.classList.remove('show');
+      if (fsSupported && !(document.fullscreenElement || document.webkitFullscreenElement)) { try { toggleFullscreen(); } catch {} }
+    };
+    addEventListener('pointerdown', goFull, { once: true });
+    addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) goFull(); }, { once: true });
+    // dim after a few minutes paused, so a still picture doesn't burn into the screen
+    let pausedSince = 0;
+    setInterval(() => {
+      if (state.isPlaying || flip.pending) pausedSince = 0;
+      else if (!pausedSince) pausedSince = Date.now();
+      document.body.classList.toggle('tv-dim', !!pausedSince && Date.now() - pausedSince > 4 * 60e3);
+    }, 5000);
+    addEventListener('keydown', () => document.body.classList.remove('tv-dim'));
+    addEventListener('pointermove', () => document.body.classList.remove('tv-dim'));
+  }
+  $('tvBtn').onclick = () => {
+    const q = new URLSearchParams(location.search); q.set('tv', '');
+    location.href = `${location.pathname}?${q.toString().replace(/=(&|$)/g, '$1')}`;
+  };
+  // "Up next" line (TV mode): the next song on the album
+  function renderUpNext() {
+    const el = $('upNext'), a = state.album, i = state.trackIndex;
+    let txt = '';
+    if (state.albumMode && a && i >= 0 && i < a.tracks.length - 1) {
+      const sd = state.sides ? state.sides[sideIndexOf(i)] : null;
+      txt = sd && i === sd.end - 1 && flipOn() ? `Then flip to Side ${state.sides[sideIndexOf(i + 1)].letter}` : `Up next · ${a.tracks[i + 1].name}`;
+    }
+    el.textContent = txt; el.classList.toggle('hidden', !txt);
+  }
+
   let wakeLock = null;
   async function requestWakeLock() {
     try {
@@ -2176,6 +2227,7 @@
   }
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) { requestWakeLock(); if (state.mode === 'spotify') poll(); }
+    else crackle.update(soundingNow() ? 1 : 0);
   });
   addEventListener('pointerdown', requestWakeLock, { once: true });
 

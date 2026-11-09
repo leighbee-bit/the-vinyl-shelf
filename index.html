@@ -11,7 +11,7 @@
 <title>The Vinyl Shelf</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<link rel="stylesheet" href="styles.css?v=2026-11-08i">
+<link rel="stylesheet" href="styles.css?v=2026-11-08o">
 </head>
 <body>
 
@@ -120,6 +120,9 @@
       <svg viewBox="0 0 24 24"><path d="M18.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L14 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L5.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.700 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L18.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
     </button>
   </div>
+
+  <div class="tv-clock" id="tvClock" aria-hidden="true"></div>
+  <div class="tv-hint" id="tvHint">Press <b>OK</b> or click anywhere for full screen</div>
 
   <!-- ===================== main ===================== -->
   <main class="app">
@@ -234,6 +237,7 @@
           <h1 class="title" id="title">Nothing playing</h1>
           <p class="artist" id="artist">Connect Spotify, or try the demo</p>
           <p class="album" id="album">&nbsp;</p>
+          <p class="upnext hidden" id="upNext"></p>
           <div class="pill-row">
             <button class="vinyl-pill" id="vinylBtn" title="Pressings and where to buy (V)"><i class="dot" id="vinylDot"></i><span id="vinylPillText">Vinyl &amp; where to buy</span></button>
             <button class="vinyl-pill note-pill hidden" id="noteBtn" title="Write a listening note (N)" aria-label="Write a listening note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.3V20h2.7l8-8-2.7-2.7-8 8zM18.7 8a1 1 0 0 0 0-1.4l-1.3-1.3a1 1 0 0 0-1.4 0l-1.2 1.2 2.7 2.7L18.7 8z"/></svg><span>Note</span></button>
@@ -425,6 +429,13 @@
     </section>
 
     <section>
+      <h3>TV</h3>
+      <p>Show the turntable on a TV: open TV mode in the TV’s web browser, or cast this tab from Chrome (⋮ → Cast) or AirPlay it from a Mac or iPhone.
+        TV mode has bigger text, no buttons, and works with a TV remote (OK plays and pauses, ◀ ▶ skip).</p>
+      <div class="row"><button class="btn" id="tvBtn">Open TV mode</button></div>
+    </section>
+
+    <section>
       <h3>Turntable finish</h3>
       <div class="swatches" id="swatches"></div>
     </section>
@@ -438,6 +449,6 @@
     </section>
   </dialog>
 
-<script src="app.js?v=2026-11-08i"></script>
+<script src="app.js?v=2026-11-08o"></script>
 </body>
 </html>

@@ -51,6 +51,14 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
 - **Vinyl crackle**: generated in the browser, plays only while the record spins (toggle with the wave button).
 - **Listening room** background that picks up the colours of the current album.
 
+### On a TV
+- **TV mode**: add `?tv` to the address (or Settings → TV → Open TV mode). Big text you can read from the couch,
+  no buttons, an "Up next" line and a clock. Click or press OK once for full screen.
+  - Works with a TV remote or keyboard: OK/Enter plays and pauses (or flips the record), ◀ ▶ and media keys skip.
+  - Burn-in care: the picture drifts a few pixels over time and dims after 4 minutes paused.
+- **Casting**: open TV mode in Chrome and use ⋮ → Cast → Cast tab to a Chromecast / Google TV, or AirPlay
+  (Screen Mirroring) from a Mac or iPhone to an Apple TV. Or open the hosted address in the TV's own web browser.
+
 ### Shortcuts
 Space play/pause (or flip the record) · ← → previous/next · F full screen · L library · T tracklist · V vinyl ·
 N note · C crackle ·

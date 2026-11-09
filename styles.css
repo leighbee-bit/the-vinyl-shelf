@@ -808,3 +808,66 @@ dialog textarea { resize: vertical; min-height: 96px; line-height: 1.45; margin-
   .wall-head .close { margin-left: auto; }
 }
 @media (max-width: 420px) { .wall-tabs button { padding: 8px 11px; font-size: 13px; } .wall-tabs .count { display: none; } }
+
+/* ===================== TV mode (?tv) ===================== */
+/* Sized in vw/vh so it reads from the couch at 720p, 1080p or 4K. No buttons: a remote or the phone drives it. */
+.tv-clock, .tv-hint, .upnext { display: none; }
+body.tv .app {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; justify-items: center;
+  column-gap: 5vw; padding: 9vh 8vw 9vh; animation: tvDrift 900s ease-in-out infinite alternate;
+}
+body.tv .deck { width: min(84%, 68vh); margin: 0; }   /* the 3D tilt draws ~17% wider than the box */
+body.tv .aside { width: 100%; max-width: 44vw; gap: 3vh; justify-self: start; }
+body.tv .np { display: flex; flex-direction: column; align-items: flex-start; gap: 4vh; }
+body.tv .stand { width: 17vh; margin-left: 1vh; }
+body.tv .ledge { height: 2.2vh; }
+body.tv .ledge span { display: block; font-size: 1.1vh; }
+body.tv .info { width: 100%; }
+body.tv .ctx { font-size: max(13px, 1.25vw); margin-bottom: 1.2vh; }
+body.tv .ctx.link::after { content: none; }
+body.tv .title { font-size: max(28px, 3.6vw); line-height: 1.12; letter-spacing: -.015em; }
+body.tv .artist { font-size: max(18px, 1.9vw); margin-top: 1vh; }
+body.tv .album { font-size: max(15px, 1.35vw); margin-top: .6vh; }
+body.tv .upnext { display: block; margin: 2.4vh 0 0; font-size: max(14px, 1.15vw); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.tv .upnext.hidden { display: none; }
+body.tv .pill-row, body.tv .controls, body.tv .tracklist, body.tv .seek-knob { display: none !important; }
+body.tv .seek { pointer-events: none; padding: 0; }
+body.tv .seek-track { height: max(4px, .45vh); }
+body.tv .times { font-size: max(13px, 1vw); margin-top: 1vh; }
+body.tv .albumbar { margin-top: 2vh; }
+body.tv .seg { height: max(4px, .45vh); }
+body.tv .albumlabel { font-size: max(13px, 1vw); }
+body.tv .bars { opacity: 1 !important; }                 /* keep progress visible; only the buttons hide */
+body.tv.idle .corner { opacity: 0; }
+body.tv .toast { font-size: max(15px, 1.2vw); padding: 1.2vh 1.6vw; top: 4vh; }
+body.tv .flip-btn { font-size: max(16px, 1.5vw); padding: 1.6vh 2vw 1.6vh 1.6vw; }
+body.tv .flip-btn svg { width: 1.6vw; height: 1.6vw; min-width: 20px; min-height: 20px; }
+@media (max-aspect-ratio: 1/1) {          /* portrait screens: stack */
+  body.tv .app { grid-template-columns: 1fr; row-gap: 4vh; }
+  body.tv .deck { width: min(88vw, 52vh); }
+  body.tv .aside { max-width: 88vw; justify-self: center; }
+  body.tv .np { flex-direction: row; align-items: flex-end; }
+}
+
+body.tv .tv-clock {
+  display: block; position: fixed; z-index: 11; top: 4vh; right: 4vw;
+  font-size: max(16px, 1.5vw); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums;
+  transition: opacity .6s ease;
+}
+body.tv:not(.idle) .tv-clock { opacity: 0; }   /* the corner buttons take its place while the mouse is moving */
+body.tv .tv-hint {
+  display: block; position: fixed; z-index: 31; left: 50%; bottom: 6vh; transform: translate(-50%, 12px);
+  padding: 1.2vh 1.8vw; border-radius: 999px; background: rgba(20,13,8,.8); border: 1px solid var(--line);
+  font-size: max(14px, 1.1vw); color: var(--muted); opacity: 0; pointer-events: none; transition: opacity .5s ease, transform .5s var(--ease);
+}
+body.tv .tv-hint b { color: var(--text); }
+body.tv .tv-hint.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* burn-in care: drift a few pixels over many minutes, and dim when paused for a while */
+@keyframes tvDrift {
+  0% { translate: -0.6vw -0.5vh; } 33% { translate: 0.5vw 0.4vh; } 66% { translate: -0.3vw 0.6vh; } 100% { translate: 0.6vw -0.4vh; }
+}
+body.tv .app, body.tv .room, body.tv .ambient { transition: opacity 2.5s ease, filter 2.5s ease; }
+body.tv.tv-dim .app { opacity: .35; }
+body.tv.tv-dim .room { filter: brightness(.45); }
+@media (prefers-reduced-motion: reduce) { body.tv .app { animation: none; } }
