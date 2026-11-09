@@ -1217,7 +1217,7 @@
   function onFullSpin(a, r) {
     const own = Discogs.match(a);
     const times = r.spins === 1 ? 'first full spin' : `${nth(r.spins)} full spin`;
-    toast(own.owned || r.spins < 2 ? `“${a.name}” · your ${times}` : `“${a.name}” · your ${times}. Worth owning? Press V for pressings`, 5000);
+    toast(own.owned || r.spins < 2 ? `“${a.name}” · your ${times}. Press N to jot a note` : `“${a.name}” · your ${times}. Worth owning? Press V for pressings`, 5000);
     renderVinyl();
     if (wallOpen() && lib.tab === 'vinyl') renderWall();
   }
@@ -1500,7 +1500,18 @@
     if (sp && sp.spins) bits.push(`<span class="own-spins">${sp.spins === 1 ? 'Played front to back once' : `Played front to back ${sp.spins} times`}</span>`);
     const lf = LastFm.lookup(a);
     if (lf && lf.est >= 1) bits.push(`<span class="own-spins">≈${lf.est} full plays on Last.fm (${lf.plays} scrobbles)</span>`);
-    return bits.length ? `<div class="vp-own">${bits.join('')}</div>` : '';
+    let h = bits.length ? `<div class="vp-own">${bits.join('')}</div>` : '';
+    const wanted = own.wanted || (String(a.id).startsWith('dg:') && (((Discogs.data() || {}).wants) || []).find((w) => `dg:${w.id}` === a.id));
+    const pr = wanted ? Prices.get(wanted.id) : null;
+    if (pr && pr.cur) {
+      const c = pr.cur;
+      h += `<div class="vp-price${pr.drop ? ' drop' : ''}">${c.v != null
+        ? `<b>${pr.drop ? 'Price drop · ' : ''}From ${Prices.money(c.v)}</b> on Discogs · ${c.n} for sale${pr.low != null && pr.low !== c.v ? ` · lowest we’d seen before: ${Prices.money(pr.low)}` : ''}`
+        : `<b>None for sale</b> on Discogs right now`} ${link(`https://www.discogs.com/sell/release/${wanted.id}`, 'See listings')}</div>`;
+    }
+    const notes = Notes.forAlbum(a.id);
+    if (notes.length) h += `<h4>Your notes</h4><ul class="notes">${notesHtml(notes, false)}</ul>`;
+    return h;
   }
 
   function renderVinyl() {
@@ -1515,6 +1526,7 @@
       : chosen && chosen.look ? `${pressName(chosen)} · where to buy` : 'Vinyl & where to buy';
     $('vinylBtn').classList.toggle('owned', !!own.owned);
     $('vinylBtn').classList.toggle('hidden', !state.track || !a);
+    $('noteBtn').classList.toggle('hidden', !state.track);
 
     const b = vinyl.browse;                    // looking at a record from the wall, not the one playing
     const shown = b ? b.album : a;
@@ -1556,13 +1568,132 @@
     else if (a.dgMaster) direct.push(link(`https://www.discogs.com/sell/list?master_id=${a.dgMaster}&format=Vinyl`, '<span>Discogs marketplace</span><small>every pressing, new &amp; used</small>', 'vp-link'));
     ((v.data && v.data.shops) || []).slice(0, 6).forEach((s) =>
       direct.push(link(s.url, `<span>${esc(hostOf(s.url))}</span><small>${s.type === 'amazon asin' ? 'exact listing' : 'listed on MusicBrainz'}</small>`, 'vp-link')));
-    if (direct.length) h += `<div class="vp-links">${direct.join('')}</div>`;
+    direct.push(localStoresLink());
+    h += `<div class="vp-links">${direct.join('')}</div>`;
     h += `<div class="vp-sub">${direct.length ? 'Or search the shops' : 'Search the shops'}</div><div class="vp-shops">${
       storeSearches(a).map(([name, url]) => link(url, `${esc(name)}<small>Search for this record</small>`)).join('')}</div>`;
     h += `<p class="vp-fine">Shop links open a search — stock and prices aren’t checked.${v.data && v.data.demo
       ? ' Pressings here are demo data.'
       : ` Pressing info from ${link(v.data && v.data.mbUrl || 'https://musicbrainz.org', 'MusicBrainz')}, a community-run music database.`}</p>`;
     return h;
+  }
+
+  // ================================================================ listening notes (a diary of what you spun)
+  const Notes = (() => {
+    const key = () => (state.mode === 'demo' ? 'tt.notes.demo' : 'tt.notes');
+    function all() {
+      let list = null;
+      try { list = JSON.parse(store.get(key()) || 'null'); } catch {}
+      if (!list && state.mode === 'demo') {
+        const a = Demo.albums[1];
+        list = [{ id: 'n0', albumId: a.id, name: a.name, artist: a.artist, cover: a.cover, track: a.tracks[2].name, at: Date.now() - 3 * 864e5,
+          text: 'Late drive home, windows down. Side B is the whole point of this record.' }];
+      }
+      return list || [];
+    }
+    const save = (list) => store.set(key(), JSON.stringify(list.slice(0, 500)));
+    return {
+      all,
+      forAlbum: (id) => all().filter((n) => n.albumId === id),
+      add(n) { const list = all(); list.unshift({ id: `n${Date.now().toString(36)}`, at: Date.now(), ...n }); save(list); },
+      remove(id) { save(all().filter((n) => n.id !== id)); },
+    };
+  })();
+  const noteDate = (t) => new Date(t).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+
+  function openNote() {
+    const a = state.album, t = state.track;
+    if (!t) return;
+    $('noteCover').style.background = a && a.cover ? `${coverCss(a.cover)} center/cover` : placeholder(t.albumName || t.name);
+    $('noteAlbum').textContent = a ? a.name : (t.albumName || t.name);
+    $('noteWhen').textContent = `${noteDate(Date.now())} · while “${t.name}” played`;
+    $('noteText').value = '';
+    $('noteDlg').showModal();
+    setTimeout(() => $('noteText').focus(), 30);
+  }
+  $('noteBtn').onclick = openNote;
+  $('noteSave').addEventListener('click', (e) => {
+    e.preventDefault();
+    const text = $('noteText').value.trim(), t = state.track, a = state.album;
+    $('noteDlg').close();
+    if (!text || !t) return;
+    Notes.add({ albumId: a ? a.id : t.albumId || t.id, name: a ? a.name : (t.albumName || t.name), artist: a ? a.artist : t.artist, cover: a ? a.cover : t.cover, track: t.name, text });
+    toast('Note saved to your listening diary');
+    renderVinyl();
+    if (wallOpen() && lib.tab === 'vinyl') renderWall();
+  });
+  $('noteText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('noteSave').click(); } });
+  const notesHtml = (list, withAlbum) => list.map((n) => `<li class="note" data-note="${esc(n.id)}">
+      ${withAlbum ? `<span class="note-cover" style="background:${esc(n.cover ? `${coverCss(n.cover)} center/cover` : placeholder(n.albumId))}"></span>` : ''}
+      <div><div class="note-meta">${withAlbum ? `<b>${esc(n.name)}</b> · ` : ''}${esc(noteDate(n.at))}${n.track ? ` · “${esc(n.track)}”` : ''}</div>
+      <p>${esc(n.text)}</p></div>
+      <button class="note-del" data-del-note="${esc(n.id)}" aria-label="Delete note" title="Delete note">×</button></li>`).join('');
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-del-note]'); if (!b) return;
+    e.stopPropagation();
+    Notes.remove(b.dataset.delNote);
+    renderVinyl();
+    if (wallOpen()) renderWall();
+  });
+
+  // ================================================================ price watch: your Discogs wishlist
+  // Discogs shares the lowest current price and how many copies are listed, but not a "usual" price,
+  // so we keep our own history and flag a drop when it's cheaper than anything we've seen before.
+  const Prices = (() => {
+    const KEY = 'tt.prices';
+    const CURRENCIES = { GB: 'GBP', IE: 'EUR', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR', BE: 'EUR', AT: 'EUR', PT: 'EUR', FI: 'EUR', CA: 'CAD', AU: 'AUD', NZ: 'NZD', JP: 'JPY', CH: 'CHF', SE: 'SEK', MX: 'MXN', BR: 'BRL', ZA: 'ZAR' };
+    const region = (navigator.language || 'en-US').split('-')[1] || '';
+    const currency = CURRENCIES[region.toUpperCase()] || (/^(de|fr|es|it|nl|pt|fi)\b/.test(navigator.language || '') ? 'EUR' : 'USD');
+    const money = (v, cur = currency) => { try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, maximumFractionDigits: v >= 100 || cur === 'JPY' ? 0 : 2 }).format(v); } catch { return `${v} ${cur}`; } };
+    const read = () => { try { return JSON.parse(store.get(KEY) || '{}') || {}; } catch { return {}; } };
+    let db = read(), running = false;
+    const DEMO = { 4: { cur: { v: 21.5, n: 14, at: Date.now() }, low: 27, drop: true }, 5: { cur: { v: 34, n: 3, at: Date.now() }, low: 34 } };
+    // info for one release: { cur: {v, n, at}, low (lowest before now), drop }
+    function get(id) {
+      if (state.mode === 'demo') return DEMO[id] || null;
+      const r = db[id]; if (!r || !r.hist || !r.hist.length) return null;
+      const cur = r.hist[r.hist.length - 1], before = r.hist.slice(0, -1).map((h) => h.v).filter((v) => v != null);
+      const low = before.length ? Math.min(...before) : null;
+      return { cur, low, drop: cur.v != null && low != null && cur.v <= low * .9 };
+    }
+    async function check(wants) {
+      if (running || state.mode !== 'spotify' && state.mode !== 'idle') return;
+      const cfg = Discogs.config(); if (!cfg) return;
+      const due = wants.filter((w) => { const r = db[w.id]; return !r || Date.now() - (r.at || 0) > 6 * 3600e3; })
+        .sort((a, b) => ((db[a.id] || {}).at || 0) - ((db[b.id] || {}).at || 0)).slice(0, 40);
+      if (!due.length) return;
+      running = true;
+      const drops = [];
+      for (const w of due) {
+        try {
+          const res = await fetch(`https://api.discogs.com/marketplace/stats/${w.id}?curr_abbr=${currency}`, { headers: cfg.token ? { Authorization: `Discogs token=${cfg.token}` } : {} });
+          if (res.status === 429) break;
+          if (res.ok) {
+            const s = await res.json();
+            const r = db[w.id] || (db[w.id] = { hist: [] });
+            const v = s.lowest_price && s.lowest_price.currency === currency ? s.lowest_price.value : null;
+            r.at = Date.now();
+            r.hist.push({ v, n: s.num_for_sale || 0, at: r.at });
+            r.hist = r.hist.slice(-30);
+            const g = get(w.id); if (g && g.drop) drops.push(`${w.title} (${money(g.cur.v)})`);
+            store.set(KEY, JSON.stringify(db));
+          }
+        } catch {}
+        await new Promise((r) => setTimeout(r, cfg.token ? 1100 : 2600));      // Discogs: 25/min without a token, 60 with
+      }
+      running = false;
+      if (drops.length) toast(`Price drop on your wishlist: ${drops.slice(0, 2).join(', ')}${drops.length > 2 ? ` and ${drops.length - 2} more` : ''}`, 7000);
+      if (wallOpen() && lib.tab === 'vinyl') renderWall();
+      renderVinyl();
+    }
+    return { get, check, money, currency };
+  })();
+
+  // ================================================================ record stores near you
+  function localStoresLink() {
+    const apple = /iPhone|iPad|Macintosh/.test(navigator.userAgent);
+    const url = apple ? 'https://maps.apple.com/?q=record%20store' : 'https://www.google.com/maps/search/record+stores+near+me';
+    return link(url, `<span>Record stores near you</span><small>opens ${apple ? 'Apple' : 'Google'} Maps · call ahead to ask</small>`, 'vp-link local');
   }
 
   // open the vinyl panel for any album (from the "My vinyl" shelves)
@@ -1807,7 +1938,12 @@
       .map((e) => ({ id: e.id, uri: e.uri, name: e.name, sub: e.artist, cover: e.cover, badge: `${e.approx ? '≈' : ''}${e.n}× front to back`, wanted: !!Discogs.match(e).wanted, album: e.album }));
     lib.items.worth = worth;
     lib.items.owned = ((d && d.owned) || []).map((r) => fromDg(r, 'owned'));
-    lib.items.wants = ((d && d.wants) || []).map((r) => fromDg(r, 'wants'));
+    lib.items.wants = ((d && d.wants) || []).map((r) => {
+      const it = fromDg(r, 'wants'), pr = Prices.get(r.id);
+      if (pr && pr.cur && pr.cur.v != null) { it.badge = `${pr.drop ? '↓ ' : 'from '}${Prices.money(pr.cur.v)}`; it.drop = pr.drop; }
+      return it;
+    });
+    if (d && d.wants && d.wants.length && !sec.hidden) Prices.check(d.wants.map((w) => ({ id: w.id, title: w.title })));
     for (const it of lib.items.owned) { const sp = Object.values(Spins.all()).find((r) => Discogs.keyOf(r.artist, r.name) === Discogs.keyOf(it.album.artist, it.name)); if (sp && sp.spins) it.badge = `${sp.spins}× front to back`; }
     document.querySelector('[data-count="vinyl"]').textContent = d ? String(lib.items.owned.length) : '';
     if (sec.hidden) return 0;
@@ -1832,10 +1968,13 @@
     } else {
       html += group('owned', 'On your shelf', `From your Discogs collection${d.user !== 'demo' ? ` (${esc(d.user)})` : ''} · tap one to play it`,
         lib.items.owned, 'No vinyl in your Discogs collection yet.');
-      html += group('wants', 'Wishlist', 'From your Discogs wantlist · tap one for pressings and shops',
+      html += group('wants', 'Wishlist', `From your Discogs wantlist · lowest Discogs price, ↓ when it drops · tap one for pressings and shops`,
         lib.items.wants, d.wantsHidden ? 'Your Discogs wantlist is private — add a personal access token in Settings to see it.' : 'Nothing on your Discogs wantlist.');
       n += lib.items.owned.length + lib.items.wants.length;
     }
+    const notes = Notes.all().filter((n) => !q || `${n.name} ${n.artist} ${n.text}`.toLowerCase().includes(q));
+    html += `<div class="vgroup"><h3 class="vgroup-title">Listening diary<small>Notes you’ve written while records played · press N to add one</small></h3>${
+      notes.length ? `<ul class="notes diary">${notesHtml(notes.slice(0, 60), true)}</ul>` : '<p class="wall-note">No notes yet. Tap “Note” under the album while something plays.</p>'}</div>`;
     shelves.innerHTML = html;
     const vc = $('vConnect'); if (vc) vc.onclick = () => { openSetup(); setTimeout(() => $('discogsUser').focus(), 50); };
     const vl = $('vLastfm'); if (vl) vl.onclick = () => { openSetup(); setTimeout(() => $('lastfmUser').focus(), 50); };
@@ -1849,7 +1988,7 @@
     const initial = esc((it.name || '?').trim().charAt(0).toUpperCase());
     const own = kind === 'albums' ? Discogs.match({ name: it.name, artist: it.sub }) : kind === 'worth' ? { wanted: it.wanted } : {};
     const sticker = own.owned ? '<span class="sticker owned" title="On your shelf">✓</span>' : own.wanted ? '<span class="sticker wanted" title="On your wishlist">♥</span>' : '';
-    const badge = it.badge ? `<span class="rec-badge">${esc(it.badge)}</span>` : '';
+    const badge = it.badge ? `<span class="rec-badge${it.drop ? ' drop' : ''}">${esc(it.badge)}</span>` : '';
     const verb = kind === 'worth' || kind === 'wants' ? 'Pressings for' : 'Play';
     return `<button class="rec" data-kind="${kind}" data-i="${i}" data-uri="${esc(it.uri)}" style="--tilt:${tilt}deg" title="${verb} ${esc(it.name)}" aria-label="${verb} ${esc(it.name)}">
       <span class="cover" style="background:${esc(bg)}">${it.cover ? '' : initial}${img}${badge}</span>${sticker}</button>`;
@@ -1999,7 +2138,7 @@
   });
 
   addEventListener('keydown', (e) => {
-    if (dialog.open || e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) {
+    if (dialog.open || $('noteDlg').open || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) {
       if (e.key === 'Escape' && e.target.id === 'libSearch') closePanel($('library'));
       return;
     }
@@ -2011,6 +2150,7 @@
     else if (e.key === 'c') $('crackleBtn').click();
     else if (e.key === 'l') $('libraryBtn').click();
     else if (e.key === 'v') $('vinylBtn').click();
+    else if (e.key === 'n' && state.track) { e.preventDefault(); openNote(); }
     else if (e.key === 't' && document.body.classList.contains('has-album') && !isDocked()) $('tracklistBtn').click();
     else if (e.key === 'Escape') document.querySelectorAll('.panel.open').forEach(closePanel);
   });

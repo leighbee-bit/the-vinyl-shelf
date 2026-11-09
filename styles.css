@@ -766,3 +766,45 @@ details.mini p { margin: 8px 0 0; }
 .wall-note.vlf { margin-top: -14px; }
 details.mini ol.hint { margin: 8px 0 0; padding-left: 18px; }
 details.mini ol.hint li { margin-bottom: 6px; }
+
+/* ===================== notes, prices, local stores ===================== */
+input[type=password], dialog textarea { width: 100%; font: inherit; font-size: 16px; color: var(--text); background: #000; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+input[type=password]:focus, dialog textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+dialog textarea { resize: vertical; min-height: 96px; line-height: 1.45; margin-top: 12px; }
+.pill-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill-row .vinyl-pill { min-width: 0; }
+.note-pill { padding: 5px 12px 5px 9px; flex: none; }
+.note-pill svg { width: 15px; height: 15px; fill: currentColor; }
+#noteDlg { width: min(460px, calc(100vw - 32px)); }
+.note-form section { border-top: 0; }
+.note-album { display: flex; gap: 12px; align-items: center; margin-top: 4px; }
+.note-album b { display: block; color: var(--text); font-size: 15px; }
+.note-album small { display: block; color: var(--faint); font-size: 12.5px; margin-top: 2px; }
+.note-cover { width: 44px; height: 44px; border-radius: 4px; flex: none; background-size: cover; background-position: center; box-shadow: 0 4px 10px rgba(0,0,0,.5); }
+
+.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.note { position: relative; display: flex; gap: 12px; padding: 12px 38px 12px 14px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--line); user-select: text; -webkit-user-select: text; }
+.note p { margin: 4px 0 0; font-size: 14.5px; line-height: 1.45; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-meta { font-size: 12px; color: var(--faint); }
+.note-meta b { color: var(--muted); }
+.note-del { position: absolute; top: 6px; right: 8px; width: 26px; height: 26px; border-radius: 50%; color: var(--faint); font-size: 18px; line-height: 1; }
+.note-del:hover { color: var(--text); background: rgba(255,255,255,.1); }
+.notes.diary { max-width: 720px; margin: 0 4px 30px; }
+.notes.diary .note { background: rgba(20,13,8,.55); }
+
+.rec-badge.drop { background: #c9a062; color: #24160a; }
+.vp-price { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--line); font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.vp-price b { color: var(--text); }
+.vp-price.drop { border-color: rgba(231,200,145,.5); background: rgba(231,200,145,.1); }
+.vp-price.drop b { color: #f3dfae; }
+.vp-price a { margin-left: auto; color: var(--text); font-size: 12.5px; font-weight: 600; text-decoration: none; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); }
+
+/* wall header with three tabs: keep labels on one line, move search to its own row on mid-size screens */
+.wall-head .tl-meta, .wall-tabs button { white-space: nowrap; }
+.wall-tabs { flex: none; }
+@media (max-width: 960px) {
+  .wall-head { flex-wrap: wrap; }
+  .wall-head input { order: 3; width: 100%; margin-left: 0; }
+  .wall-head .close { margin-left: auto; }
+}
+@media (max-width: 420px) { .wall-tabs button { padding: 8px 11px; font-size: 13px; } .wall-tabs .count { display: none; } }

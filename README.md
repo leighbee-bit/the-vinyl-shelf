@@ -31,6 +31,12 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
   - **Last.fm history** (Settings → Listening history): import your top albums from Last.fm so "Worth owning" is
     filled from day one. Full plays are estimated as album scrobbles ÷ songs on the album (shown with ≈).
     Needs your Last.fm username and a free API key from https://www.last.fm/api/account/create.
+- **Listening diary**: tap **Note** under the album (or press N) to jot down a line about this play. Notes show in
+  the vinyl panel for that album and in a diary at the bottom of My vinyl.
+- **Price watch**: your Discogs wishlist shows the lowest current Discogs price on each sleeve. The app keeps its own
+  price history (checked every 6 hours while you browse My vinyl) and marks a ↓ drop when a record is at least 10%
+  cheaper than the lowest price it had seen before.
+- **Record stores near you**: a link in the vinyl panel opens Apple Maps or Google Maps with nearby record stores.
 - **Sides**: albums are split into Side A and Side B (four sides for long albums) by running time. The needle
   travels across one side at a time, and at the end of a side playback stops so you can flip the record
   (tap the prompt, or press Space). Turn it off in Settings → Sound.
@@ -46,7 +52,8 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
 - **Listening room** background that picks up the colours of the current album.
 
 ### Shortcuts
-Space play/pause · ← → previous/next · F full screen · L library · T tracklist · V vinyl · C crackle ·
+Space play/pause (or flip the record) · ← → previous/next · F full screen · L library · T tracklist · V vinyl ·
+N note · C crackle ·
 double-click the turntable to show just the record.
 
 Play/pause/skip/seek and choosing records need **Spotify Premium** — that's a Spotify rule.
