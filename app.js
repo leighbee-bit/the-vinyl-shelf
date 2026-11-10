@@ -2047,9 +2047,9 @@
 
   // ---------------------------------------------------------------- record wall (library)
   const KINDS = ['albums', 'playlists'];
-  const lib = { items: {}, loading: {}, query: '', gen: 0, tab: ['playlists', 'vinyl'].includes(store.get('tt.wallTab')) ? store.get('tt.wallTab') : 'albums' };
+  const lib = { items: {}, loading: {}, query: '', gen: 0, tab: ['playlists', 'vinyl', 'trending'].includes(store.get('tt.wallTab')) ? store.get('tt.wallTab') : 'albums' };
   const wallOpen = () => $('library').classList.contains('open');
-  function resetLibrary() { lib.items = {}; lib.loading = {}; lib.gen++; if (wallOpen()) renderWall(); }
+  function resetLibrary() { lib.items = {}; lib.loading = {}; lib.gen++; trend.data = null; trend.at = 0; if (wallOpen()) renderWall(); }
 
   $('libraryBtn').onclick = () => {
     const p = $('library');
@@ -2123,6 +2123,7 @@
       const kind = sec.dataset.kind, all = lib.items[kind], loading = lib.loading[kind];
       const shelves = sec.querySelector('.shelves');
       if (kind === 'vinyl') { shown += renderVinylShelves(sec, shelves, q, cols, gap); continue; }
+      if (kind === 'trending') { shown += renderTrending(sec, shelves, q, cols, gap); continue; }
       document.querySelector(`[data-count="${kind}"]`).textContent = all ? `${all.length}${loading ? '…' : ''}` : '';
       if (kind !== lib.tab) { sec.hidden = true; continue; }
       const list = (all || []).map((it, i) => ({ it, i })).filter(({ it }) => !q || `${it.name} ${it.sub}`.toLowerCase().includes(q));
@@ -2150,6 +2151,68 @@
       </div>`;
     }
     return html;
+  }
+
+  // "Trending": what everyone is rating — most-rated albums, the highest rated, and the most-liked reviews
+  const trend = { data: null, at: 0, busy: false };
+  function loadTrending() {
+    if (trend.busy) return;
+    trend.busy = true;
+    Reviews.trending().then((d) => { trend.data = d || { mostRated: [], topRated: [], popular: [] }; }, () => { trend.data = { error: true }; })
+      .finally(() => { trend.busy = false; trend.at = Date.now(); if (wallOpen() && lib.tab === 'trending') renderWall(); });
+  }
+  const avgLabel = (avg) => (avg / 2).toFixed(1);
+  function likeBtn(r, idx, where) {
+    if (r.mine) return `<span class="like-count" title="Likes on your review">♥ ${r.likes || 0}</span>`;
+    return `<button class="like-btn${r.liked ? ' on' : ''}" data-like="${idx}" data-where="${where}" aria-pressed="${!!r.liked}" aria-label="Like ${esc(r.name)}’s review">♥ <span>${r.likes || 0}</span></button>`;
+  }
+  async function toggleLike(r, btn) {
+    if (state.mode !== 'demo' && !Reviews.signedIn()) { toast('Sign in to like reviews (Settings → Profile & reviews)', 3500); return; }
+    const on = !r.liked;
+    r.liked = on; r.likes = Math.max(0, (r.likes || 0) + (on ? 1 : -1));
+    const paint = () => { btn.classList.toggle('on', r.liked); btn.setAttribute('aria-pressed', String(r.liked)); btn.querySelector('span').textContent = r.likes; };
+    paint(); btn.disabled = true;
+    const ok = await Reviews.like(r.id, on);
+    btn.disabled = false;
+    if (!ok) { r.liked = !on; r.likes = Math.max(0, r.likes + (on ? -1 : 1)); paint(); toast('Couldn’t save that like — try again'); }
+    else trend.at = 0; // re-rank next time Trending is drawn
+  }
+  function renderTrending(sec, shelves, q, cols, gap) {
+    sec.hidden = lib.tab !== 'trending';
+    if (sec.hidden) return 0;
+    if (!Reviews.remoteOn && state.mode !== 'demo') {
+      shelves.innerHTML = '<p class="wall-note">Trending shows what everyone is rating once community reviews are switched on for this app.</p>'; return 1;
+    }
+    if (!trend.busy && (!trend.data || Date.now() - trend.at > 60000)) loadTrending();
+    const t = trend.data;
+    if (!t) { shelves.innerHTML = '<p class="wall-note">Checking what’s trending…</p>'; return 1; }
+    if (t.missing) { shelves.innerHTML = '<p class="wall-note">Trending needs one more database step: run <b>supabase/trending.sql</b> in your Supabase SQL Editor.</p>'; return 1; }
+    if (t.error) { shelves.innerHTML = '<p class="wall-note">Couldn’t load what’s trending right now.</p>'; return 1; }
+    const match = (a) => !q || `${a.name} ${a.artist}`.toLowerCase().includes(q);
+    const shelfOf = (kind, list, badge) => {
+      lib.items[kind] = list.filter((st) => match(st.album)).map((st) => ({ id: st.album.id, uri: '', name: st.album.name, sub: st.album.artist, cover: st.album.cover, badge: badge(st), album: st.album }));
+      return lib.items[kind].map((it, i) => ({ it, i }));
+    };
+    const group = (kind, title, blurb, list, empty) => {
+      if (q && !list.length) return '';
+      return `<div class="vgroup"><h3 class="vgroup-title">${title}<small>${blurb}</small></h3>${list.length ? shelfRows(kind, list, cols, gap) : `<p class="wall-note">${empty}</p>`}</div>`;
+    };
+    const most = shelfOf('trendMost', t.mostRated, (st) => `★ ${avgLabel(st.avg)} · ${st.ratings}`);
+    const top = shelfOf('trendTop', t.topRated, (st) => `★ ${avgLabel(st.avg)}`);
+    const revs = lib.items.trendReviews = t.popular.filter((r) => match(r.album) || `${r.name} ${r.body}`.toLowerCase().includes(q));
+    let html = group('trendMost', 'Most rated', 'The albums people are rating most this week, then of all time · ★ average · number of ratings',
+      most, 'No ratings yet. Rate what’s playing to start the chart.');
+    html += group('trendTop', 'Highest rated', 'The best-loved albums by average rating · tap one for its reviews',
+      top, 'Albums show up here once a couple of people have rated them.');
+    if (revs.length || !q) html += `<div class="vgroup"><h3 class="vgroup-title">Popular reviews<small>The reviews getting the most ♥ this week · tap one to read the rest</small></h3>${
+      revs.length ? `<ul class="notes diary rv-feed trend-reviews">${revs.map((r, i) => `<li class="note" data-trend-rv="${i}" role="button" tabindex="0">
+          <span class="trend-rank">${i + 1}</span>
+          <span class="note-cover" style="background:${esc(r.album.cover ? `${coverCss(r.album.cover)} center/cover` : placeholder(r.album.name))}"></span>
+          <div><div class="note-meta"><b>${esc(r.name)}</b> on <b>${esc(r.album.name)}</b> · ${esc(r.album.artist)} · ${esc(noteDate(r.at))}</div>
+          ${r.rating ? starsHtml(r.rating) : ''}<p>${esc(r.body)}</p>${likeBtn(r, i, 'trend')}</div></li>`).join('')}</ul>`
+        : '<p class="wall-note">No written reviews yet. Write one with the ★ button under the album.</p>'}</div>`;
+    shelves.innerHTML = html;
+    return most.length + top.length + revs.length || (q ? 0 : 1);
   }
 
   // "My vinyl": albums you keep playing but don't own, your Discogs shelf, and your wishlist
@@ -2246,7 +2309,7 @@
     const own = kind === 'albums' ? Discogs.match({ name: it.name, artist: it.sub }) : kind === 'worth' ? { wanted: it.wanted } : {};
     const sticker = own.owned ? '<span class="sticker owned" title="On your shelf">✓</span>' : own.wanted ? '<span class="sticker wanted" title="On your wishlist">♥</span>' : '';
     const badge = it.badge ? `<span class="rec-badge${it.drop ? ' drop' : ''}">${esc(it.badge)}</span>` : '';
-    const verb = kind === 'worth' || kind === 'wants' ? 'Pressings for' : kind === 'rated' ? 'Reviews for' : 'Play';
+    const verb = kind === 'worth' || kind === 'wants' ? 'Pressings for' : ['rated', 'trendMost', 'trendTop'].includes(kind) ? 'Reviews for' : 'Play';
     return `<button class="rec" data-kind="${kind}" data-i="${i}" data-uri="${esc(it.uri)}" style="--tilt:${tilt}deg" title="${verb} ${esc(it.name)}" aria-label="${verb} ${esc(it.name)}">
       <span class="cover" style="background:${esc(bg)}">${it.cover ? '' : initial}${img}${badge}</span>${sticker}</button>`;
   }
@@ -2284,12 +2347,16 @@
 
   let pulling = false;
   $('wallScroll').addEventListener('click', (e) => {
+    const lk = e.target.closest('[data-like]');
+    if (lk) { const r = (lib.items.trendReviews || [])[Number(lk.dataset.like)]; if (r) toggleLike(r, lk); return; }
+    const tr = e.target.closest('[data-trend-rv]');
+    if (tr) { const r = (lib.items.trendReviews || [])[Number(tr.dataset.trendRv)]; if (r) openReviews(r.album); return; }
     const f = e.target.closest('[data-feed]');
     if (f) { const r = (lib.items.feed || [])[Number(f.dataset.feed)]; if (r) openReviews(r.album); return; }
     const b = e.target.closest('[data-i][data-kind]'); if (!b || pulling) return;
     const it = (lib.items[b.dataset.kind] || [])[Number(b.dataset.i)]; if (!it) return;
     if (b.dataset.kind === 'worth' || b.dataset.kind === 'wants') { openVinylFor(it.album); return; }
-    if (b.dataset.kind === 'rated') { openReviews(it.album); return; }
+    if (['rated', 'trendMost', 'trendTop'].includes(b.dataset.kind)) { openReviews(it.album); return; }
     let uri = it.uri;
     if (b.dataset.kind === 'owned') {
       uri = findOnSpotify(it.album);
@@ -2572,9 +2639,34 @@
       const h = hashOf(keyOf(a)), n = 2 + (h % 4), out = [];
       for (let i = 0; i < n; i++) {
         const k = (h >>> (i * 3)) + i * 7;
-        out.push({ id: `d${i}`, name: PEOPLE[k % PEOPLE.length], rating: 5 + ((k >> 2) % 6), body: (k % 5) === 0 ? '' : LINES[(k >> 1) % LINES.length], at: Date.now() - ((k % 40) + 1) * 864e5 });
+        out.push({ id: `d:${keyOf(a)}:${i}`, name: PEOPLE[k % PEOPLE.length], rating: 5 + ((k >> 2) % 6), body: (k % 5) === 0 ? '' : LINES[(k >> 1) % LINES.length], at: Date.now() - ((k % 40) + 1) * 864e5 });
       }
       return out;
+    }
+
+    const demoLiked = new Set();
+    const demoLikes = (r) => (hashOf(r.id) % 38) + 1 + (demoLiked.has(r.id) ? 1 : 0);
+    const withDemoLikes = (r) => ({ ...r, likes: demoLikes(r), liked: demoLiked.has(r.id) });
+    function demoTrending() {
+      const stats = Demo.albums.map((a) => {
+        const rs = demoFor(a), h = hashOf(keyOf(a));
+        return { album: { id: a.id, name: a.name, artist: a.artist, cover: a.cover }, avg: rs.reduce((n, r) => n + r.rating, 0) / rs.length,
+          ratings: rs.length * (3 + (h % 9)), recent: (h >>> 5) % 12, reviews: rs };
+      });
+      return {
+        mostRated: [...stats].sort((x, y) => y.recent - x.recent || y.ratings - x.ratings),
+        topRated: [...stats].sort((x, y) => y.avg - x.avg || y.ratings - x.ratings),
+        popular: stats.flatMap((st) => st.reviews.filter((r) => r.body).map((r) => ({ ...withDemoLikes(r), album: st.album })))
+          .sort((x, y) => y.likes - x.likes).slice(0, 20),
+      };
+    }
+    const albumOf = (r) => ({ id: r.spotify_album_id || `rv:${r.album_key}`, name: r.album_name, artist: r.artist, cover: r.cover_url ? { url: r.cover_url } : null });
+    const statOf = (r) => ({ album: albumOf(r), avg: Number(r.avg_rating) || 0, ratings: Number(r.ratings) || 0, recent: Number(r.recent) || 0 });
+    const missingView = (e) => /PGRST205|42P01|does not exist|schema cache/i.test(`${e.code} ${e.message}`);
+    async function likedSet(ids) {
+      if (!sb || !session || !ids.length) return new Set();
+      const { data } = await sb.from('review_likes').select('review_id').eq('user_id', session.user.id).in('review_id', ids);
+      return new Set((data || []).map((x) => x.review_id));
     }
 
     // ---- Supabase, loaded only when it's configured and needed
@@ -2662,13 +2754,20 @@
       },
       // everyone's reviews for one album (newest first)
       async forAlbum(a) {
-        if (state.mode === 'demo') return demoFor(a);
+        if (state.mode === 'demo') return demoFor(a).map(withDemoLikes);
         if (!remoteOn) return null;
         const c = await client(); if (!c) return null;
+        const pop = await c.from('review_popularity').select('id, rating, body, updated_at, user_id, display_name, likes')
+          .eq('album_key', keyOf(a)).order('likes', { ascending: false }).order('updated_at', { ascending: false }).limit(60);
+        if (!pop.error) {
+          const liked = await likedSet(pop.data.map((r) => r.id));
+          return pop.data.map((r) => ({ id: r.id, name: r.display_name || 'Someone', rating: r.rating, body: r.body || '', at: Date.parse(r.updated_at),
+            mine: !!session && r.user_id === session.user.id, likes: Number(r.likes) || 0, liked: liked.has(r.id) }));
+        }
         const { data, error } = await c.from('reviews').select('id, rating, body, updated_at, user_id, profiles(display_name)')
           .eq('album_key', keyOf(a)).order('updated_at', { ascending: false }).limit(60);
         if (error) throw error;
-        return data.map((r) => ({ id: r.id, name: (r.profiles && r.profiles.display_name) || 'Someone', rating: r.rating, body: r.body || '', at: Date.parse(r.updated_at), mine: session && r.user_id === session.user.id }));
+        return data.map((r) => ({ id: r.id, name: (r.profiles && r.profiles.display_name) || 'Someone', rating: r.rating, body: r.body || '', at: Date.parse(r.updated_at), mine: !!session && r.user_id === session.user.id }));
       },
       // the latest reviews from everyone, for the record wall
       async recent() {
@@ -2682,6 +2781,36 @@
         if (error) throw error;
         return data.map((r) => ({ id: r.id, name: (r.profiles && r.profiles.display_name) || 'Someone', rating: r.rating, body: r.body || '', at: Date.parse(r.updated_at),
           album: { id: r.spotify_album_id || `rv:${r.id}`, name: r.album_name, artist: r.artist, cover: r.cover_url ? { url: r.cover_url } : null } }));
+      },
+      // the Trending page: most-rated albums, highest-rated albums and the most-liked reviews
+      async trending() {
+        if (state.mode === 'demo') return demoTrending();
+        if (!remoteOn) return null;
+        const c = await client(); if (!c) return null;
+        const [most, top, pop] = await Promise.all([
+          c.from('album_stats').select('*').gt('ratings', 0).order('recent', { ascending: false }).order('ratings', { ascending: false }).order('last_at', { ascending: false }).limit(24),
+          c.from('album_stats').select('*').gte('ratings', 2).order('avg_rating', { ascending: false }).order('ratings', { ascending: false }).limit(24),
+          c.from('review_popularity').select('*').not('body', 'is', null).order('recent_likes', { ascending: false }).order('likes', { ascending: false }).order('updated_at', { ascending: false }).limit(20),
+        ]);
+        const err = most.error || top.error || pop.error;
+        if (err) { if (missingView(err)) return { missing: true }; throw err; }
+        // with only a few ratings so far, rank everything that has one
+        const topRows = top.data.length ? top.data : [...most.data].sort((x, y) => Number(y.avg_rating) - Number(x.avg_rating));
+        const liked = await likedSet(pop.data.map((r) => r.id));
+        return {
+          mostRated: most.data.map(statOf), topRated: topRows.map(statOf),
+          popular: pop.data.map((r) => ({ id: r.id, name: r.display_name || 'Someone', rating: r.rating, body: r.body || '', at: Date.parse(r.updated_at),
+            likes: Number(r.likes) || 0, liked: liked.has(r.id), mine: !!session && r.user_id === session.user.id, album: albumOf(r) })),
+        };
+      },
+      // like or unlike someone's review; returns false when it couldn't be saved
+      async like(id, on) {
+        if (state.mode === 'demo') { if (on) demoLiked.add(id); else demoLiked.delete(id); return true; }
+        if (!sb || !session || !profile) return false;
+        const q = on ? sb.from('review_likes').insert({ review_id: id })
+          : sb.from('review_likes').delete().eq('review_id', id).eq('user_id', session.user.id);
+        const { error } = await q;
+        return !error || (on && error.code === '23505'); // already liked counts as liked
       },
       async sendLink(email, name) {
         const c = await client(); if (!c) throw new Error('Community reviews aren’t set up');
@@ -2731,6 +2860,10 @@
 
   // ---- the reviews panel (works for the album playing, or any album from the wall)
   const rv = { album: null, req: 0 };
+  $('rvBody').addEventListener('click', (e) => {
+    const lk = e.target.closest('[data-like]'); if (!lk) return;
+    const r = (rv.others || [])[Number(lk.dataset.like)]; if (r) toggleLike(r, lk);
+  });
   function openReviews(album) {
     if (!album) return;
     rv.album = album;
@@ -2776,8 +2909,9 @@
       const rated = list.filter((r) => r.rating);
       const avg = rated.length ? rated.reduce((s, r) => s + r.rating, 0) / rated.length : 0;
       let h = rated.length ? `<div class="rv-avg">${starsHtml(Math.round(avg), 'big')}<span><b>${(avg / 2).toFixed(1)}</b> from ${rated.length} rating${rated.length === 1 ? '' : 's'}</span></div>` : '';
-      h += others.length ? `<ul class="notes rv-list">${others.map((r) => `<li class="note"><div><div class="note-meta"><b>${esc(r.name)}</b> · ${esc(noteDate(r.at))}</div>
-          ${r.rating ? starsHtml(r.rating) : ''}${r.body ? `<p>${esc(r.body)}</p>` : ''}</div></li>`).join('')}</ul>`
+      rv.others = others;
+      h += others.length ? `<ul class="notes rv-list">${others.map((r, i) => `<li class="note"><div><div class="note-meta"><b>${esc(r.name)}</b> · ${esc(noteDate(r.at))}</div>
+          ${r.rating ? starsHtml(r.rating) : ''}${r.body ? `<p>${esc(r.body)}</p>` : ''}${r.likes != null && r.body ? likeBtn(r, i, 'panel') : ''}</div></li>`).join('')}</ul>`
         : '<p class="vp-note">No one else has reviewed this one yet. Be the first.</p>';
       box.innerHTML = h;
     }).catch(() => { if (req === rv.req) $('rvCommunity').innerHTML = '<p class="vp-note">Couldn’t load reviews right now.</p>'; });
@@ -2786,7 +2920,8 @@
   function refreshReviewUI() {
     renderRatePill();
     if ($('reviewsPanel').classList.contains('open')) renderReviews();
-    if (wallOpen() && lib.tab === 'vinyl') renderWall();
+    trend.at = 0;
+    if (wallOpen() && (lib.tab === 'vinyl' || lib.tab === 'trending')) renderWall();
   }
   function renderRatePill() {
     const a = state.album, mine = a ? Reviews.mine(a) : null;

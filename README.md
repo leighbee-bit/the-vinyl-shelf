@@ -38,6 +38,8 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
 - **Ratings & reviews** (★ button under the album, or press W): rate in half stars and write a review. Your ratings
   get their own shelf on My vinyl. Reviews are saved on your device; to share them and read other listeners'
   reviews, connect a free Supabase project — see [SUPABASE.md](SUPABASE.md).
+- **Trending** (a tab on the record wall): the most-rated and highest-rated albums across everyone, and the
+  most-liked reviews with their stars and text. Tap ♥ to like a review.
 - **Backgrounds** (Settings → Background): Home, Vinyl room (a record shop with a neon sign), Party (mirror ball and
   coloured lights that move while music plays) and Skyline (a city at night). Every scene picks up the album's colours.
 - **Listening diary**: tap **Note** under the album (or press N) to jot down a line about this play. Notes show in

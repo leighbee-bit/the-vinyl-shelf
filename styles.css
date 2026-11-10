@@ -995,3 +995,21 @@ body.playing .pt-beam, body.playing .pt-spot, body.playing .pt-sparkle { animati
 @keyframes crackle-pulse { 50% { opacity: .35; transform: scale(.7); } }
 @media (prefers-reduced-motion: reduce) { .crackle-hint::before { animation: none; } }
 body.tv .crackle-hint { font-size: max(15px, 1.2vw); bottom: 5vh; }
+
+/* ================================================================ trending */
+.like-btn, .like-count {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font: inherit; font-size: 13px;
+  color: var(--muted); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+}
+.like-btn { cursor: pointer; transition: color .15s, background .15s, border-color .15s; }
+.like-btn:hover { color: var(--text); background: rgba(255,255,255,.12); }
+.like-btn.on { color: #ff7a8a; border-color: rgba(255,122,138,.45); background: rgba(255,122,138,.12); }
+.like-btn:disabled { opacity: .7; }
+.like-btn span, .like-count { font-variant-numeric: tabular-nums; }
+.like-count { background: none; }
+.trend-reviews .note { position: relative; }
+.trend-rank {
+  flex: none; align-self: center; width: 1.6em; text-align: center; font-size: 15px; font-weight: 700;
+  color: var(--faint); font-variant-numeric: tabular-nums;
+}
+.trend-reviews .note:nth-child(-n+3) .trend-rank { color: var(--accent, #e8a25a); }

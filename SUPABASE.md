@@ -13,6 +13,9 @@ reviews, connect a free [Supabase](https://supabase.com) project. It takes about
 2. Paste everything in [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
    This creates `profiles` (display names) and `reviews`, with rules so that anyone can read reviews
    but people can only add, edit or delete their own.
+3. Open another **New query**, paste [`supabase/trending.sql`](supabase/trending.sql) and click **Run**.
+   This adds likes on reviews and the summaries behind the **Trending** tab (most rated, highest rated,
+   popular reviews). It's safe to run again.
 
 ## 3. Set up sign-in links
 1. Open **Authentication → Sign In / Providers** and make sure **Email** is enabled.

@@ -11,7 +11,7 @@
 <title>The Vinyl Shelf</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<link rel="stylesheet" href="styles.css?v=2026-11-10h">
+<link rel="stylesheet" href="styles.css?v=2026-11-10j">
 </head>
 <body>
 
@@ -410,6 +410,7 @@
         <button role="tab" data-tab="albums" aria-selected="true">Albums <span class="count" data-count="albums"></span></button>
         <button role="tab" data-tab="playlists" aria-selected="false">Playlists <span class="count" data-count="playlists"></span></button>
         <button role="tab" data-tab="vinyl" aria-selected="false">My vinyl <span class="count" data-count="vinyl"></span></button>
+        <button role="tab" data-tab="trending" aria-selected="false">Trending</button>
       </div>
       <input type="search" id="libSearch" placeholder="Search your records" autocomplete="off" spellcheck="false" aria-label="Search your records">
       <button class="icon-btn small close" data-close aria-label="Close record wall">
@@ -425,6 +426,9 @@
         <div class="shelves"></div>
       </section>
       <section class="wall-sec" data-kind="vinyl">
+        <div class="shelves"></div>
+      </section>
+      <section class="wall-sec" data-kind="trending">
         <div class="shelves"></div>
       </section>
     </div>
@@ -638,7 +642,7 @@
     </section>
   </dialog>
 
-<script src="config.js?v=2026-11-10h"></script>
-<script src="app.js?v=2026-11-10h"></script>
+<script src="config.js?v=2026-11-10j"></script>
+<script src="app.js?v=2026-11-10j"></script>
 </body>
 </html>
