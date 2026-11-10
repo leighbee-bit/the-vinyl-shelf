@@ -1537,7 +1537,7 @@
       ['Amazon', `https://www.amazon.com/s?k=${e(`${q} vinyl`)}`],
       ['Target', `https://www.target.com/s?searchTerm=${e(`${q} vinyl`)}`],
       ['Walmart', `https://www.walmart.com/search?q=${e(`${q} vinyl`)}`],
-      ['Barnes & Noble', `https://www.barnesandnoble.com/s/${e(`${q} vinyl`)}`],
+      ['Barnes & Noble', `https://www.barnesandnoble.com/search?q=${e(`${q} vinyl`)}`],
       ['Urban Outfitters', `https://www.urbanoutfitters.com/search?q=${e(`${q} vinyl`)}`],
       ['Bandcamp', `https://bandcamp.com/search?q=${e(q)}&item_type=a`],
       ['eBay', `https://www.ebay.com/sch/i.html?_nkw=${e(`${q} vinyl`)}`],
