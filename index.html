@@ -11,7 +11,7 @@
 <title>The Vinyl Shelf</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<link rel="stylesheet" href="styles.css?v=2026-11-10k">
+<link rel="stylesheet" href="styles.css?v=2026-11-10m">
 </head>
 <body>
 
@@ -245,6 +245,9 @@
          <div class="badge">TVS</div>
        </div>
        <div class="face">
+        <!-- brushed platter rim with strobe dots, lit by the lamp while a record plays -->
+        <div class="strobe" aria-hidden="true"></div>
+        <div class="strobe-lamp" aria-hidden="true"></div>
         <div class="platter">
           <div class="record" id="record">
             <div class="label" id="label">
@@ -264,10 +267,29 @@
             <radialGradient id="plateG" cx=".4" cy=".35" r=".7">
               <stop offset="0" stop-color="#3a3530"/><stop offset="1" stop-color="#141210"/>
             </radialGradient>
+            <radialGradient id="dialG" cx=".35" cy=".3" r=".8">
+              <stop offset="0" stop-color="#ffffff"/><stop offset=".4" stop-color="#cfcac3"/><stop offset="1" stop-color="#6f6a63"/>
+            </radialGradient>
+            <linearGradient id="leverG" x1="0" x2="1">
+              <stop offset="0" stop-color="#8c877f"/><stop offset=".45" stop-color="#f1ede7"/><stop offset="1" stop-color="#7a756e"/>
+            </linearGradient>
           </defs>
           <circle cx="86" cy="14" r="7.6" fill="url(#plateG)" stroke="rgba(255,255,255,.14)" stroke-width=".5"/>
           <circle cx="86" cy="14" r="5.6" fill="none" stroke="rgba(0,0,0,.45)" stroke-width=".5"/>
           <circle cx="95.7" cy="52.8" r="2.1" fill="url(#plateG)" stroke="rgba(255,255,255,.12)" stroke-width=".35"/>
+          <!-- anti-skate dial -->
+          <g class="antiskate">
+            <circle cx="76.4" cy="7.6" r="2.9" fill="url(#plateG)" stroke="rgba(255,255,255,.12)" stroke-width=".3"/>
+            <circle cx="76.4" cy="7.6" r="1.9" fill="url(#dialG)" stroke="rgba(0,0,0,.45)" stroke-width=".2"/>
+            <path d="M76.4 4.9v.5M78.7 6.2l-.4.25M78.7 9l-.4-.25M74.1 6.2l.4.25M74.1 9l.4-.25" stroke="rgba(255,255,255,.4)" stroke-width=".18" stroke-linecap="round"/>
+            <path d="M76.4 7.6l.9-1.2" stroke="#2b2826" stroke-width=".32" stroke-linecap="round"/>
+          </g>
+          <!-- cue lever -->
+          <g class="cue">
+            <rect x="93.7" y="20.4" width="3.6" height="10.6" rx="1" fill="url(#plateG)" stroke="rgba(255,255,255,.12)" stroke-width=".3"/>
+            <rect x="94.95" y="22.2" width="1.1" height="7.6" rx=".5" fill="url(#leverG)"/>
+            <circle cx="95.5" cy="22.4" r="1.05" fill="url(#dialG)" stroke="rgba(0,0,0,.4)" stroke-width=".18"/>
+          </g>
           <!-- the arm's shadow: app.js recomputes it every frame from the arm's height, so it meets the needle -->
           <g id="armShadow" filter="url(#softShadow)" opacity=".7" fill="#000">
             <path id="shCw"/>
@@ -278,7 +300,10 @@
         </svg>
 
         <div class="hinge" style="left:20%"></div><div class="hinge" style="left:54%"></div>
+        <!-- pitch slider -->
+        <div class="pitch" aria-hidden="true"><i class="pitch-cap"></i></div>
         <div class="plate">
+          <button class="startstop" id="startStop" type="button" aria-label="Start or stop the record"><span>Start·Stop</span></button>
           <span class="knob" title="Volume"></span>
           <span class="speedsw" id="speedSw" aria-label="Speed"><i data-rpm="33" class="on">33</i><i data-rpm="45">45</i><i data-rpm="78">78</i></span>
           <span class="led" id="led"></span>
@@ -642,7 +667,7 @@
     </section>
   </dialog>
 
-<script src="config.js?v=2026-11-10k"></script>
-<script src="app.js?v=2026-11-10k"></script>
+<script src="config.js?v=2026-11-10m"></script>
+<script src="app.js?v=2026-11-10m"></script>
 </body>
 </html>

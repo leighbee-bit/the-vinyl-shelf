@@ -2453,6 +2453,10 @@
   ['mousemove', 'pointerdown', 'keydown', 'wheel'].forEach((ev) => addEventListener(ev, wake, { passive: true }));
   wake();
 
+  // the deck's own Start·Stop button
+  $('startStop').addEventListener('pointerup', (e) => e.stopPropagation());
+  $('startStop').onclick = (e) => { e.stopPropagation(); togglePlay(); };
+
   let lastTap = 0;
   $('turntable').addEventListener('pointerup', () => {
     const now = Date.now();
