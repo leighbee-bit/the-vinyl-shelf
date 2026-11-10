@@ -193,9 +193,8 @@
     next.style.backgroundImage = css; next.classList.add('show');
     setTimeout(() => { base.style.backgroundImage = css; next.classList.remove('show'); }, 850);
   }
-  function setRoomCover(url) {
-    const img = $('roomCover');
-    if (url) img.setAttribute('href', url); else img.removeAttribute('href');
+  function setRoomCover(url) {      // every scene has the playing record somewhere in it
+    document.querySelectorAll('.room-cover').forEach((img) => { if (url) img.setAttribute('href', url); else img.removeAttribute('href'); });
   }
   function setColors(c1, c2) {
     const s = document.documentElement.style;
@@ -247,6 +246,7 @@
     state.cum = []; state.albumTotal = 0;
     if (state.album) for (const tr of state.album.tracks) { state.cum.push(state.albumTotal); state.albumTotal += tr.durationMs; }
     state.sides = state.album ? splitSides(state.album.tracks, state.cum, state.albumTotal) : null;
+    state.sidesFrom = null;
     cancelFlip();
     document.body.classList.toggle('has-album', !!state.album);
     if (!state.album) closePanel($('tracklist'));
@@ -274,6 +274,19 @@
       start = end;
     }
     return sides;
+  }
+  // swap the running-time guess for the real vinyl sides once MusicBrainz answers
+  function applyRealSides(a, sides) {
+    if (!sides || !state.album || state.album.id !== a.id || sides.groups.length !== a.tracks.length) return;
+    const out = [], g = sides.groups;
+    for (let i = 0; i < g.length; i++) {
+      if (i && g[i] === g[i - 1]) continue;
+      let end = i; while (end < g.length && g[end] === g[i]) end++;
+      const base = state.cum[i], stop = end < g.length ? state.cum[end] : state.albumTotal;
+      out.push({ start: i, end, base, total: stop - base, letter: String.fromCharCode(65 + out.length) });
+    }
+    state.sides = out; state.sidesFrom = sides.from;
+    refreshAlbumMatch(true);
   }
   const sideIndexOf = (i) => (state.sides ? Math.max(0, state.sides.findIndex((sd) => i >= sd.start && i < sd.end)) : 0);
   // the part of the album the needle travels across right now: the current side, or the whole album
@@ -856,7 +869,7 @@
         if (kind === 'albums') {
           const a = x.album || x;
           const url = pickImage(a.images, 300);
-          return { id: a.id, uri: a.uri, name: a.name, sub: (a.artists || []).map((r) => r.name).join(', '), cover: url ? { url } : null };
+          return { id: a.id, uri: a.uri, name: a.name, sub: (a.artists || []).map((r) => r.name).join(', '), cover: url ? { url } : null, type: a.album_type, n: a.total_tracks };
         }
         const total = x.items?.total ?? x.tracks?.total;           // `tracks` was renamed `items` in Feb 2026
         const url = pickImage(x.images, 300);
@@ -978,7 +991,7 @@
       library: async (kind) => ({
         next: null,
         items: kind === 'albums'
-          ? albums.map((a) => ({ id: a.id, uri: a.uri, name: a.name, sub: a.artist, cover: a.cover }))
+          ? albums.map((a) => ({ id: a.id, uri: a.uri, name: a.name, sub: a.artist, cover: a.cover, type: a.type || 'album', n: a.tracks.length }))
           : playlists.map((p) => ({ id: p.id, uri: p.uri, name: p.name, sub: `Demo playlist · ${p.refs.length} songs`, cover: albums[p.refs[0][0]].cover })),
       }),
       contextName: async (uri) => (playlists.find((p) => p.uri === uri) || {}).name,
@@ -1006,7 +1019,8 @@
           a5: [P('', '2020', 'US', 'Field Recordings', 'FRC-1')],
         };
         const pressings = sortPressings(table[a.id] || []);
-        return { found: a.id !== 'a6', demo: true, pressings, discogsMaster: null, shops: [] };
+        const sides = a.id === 'a0' ? { groups: [0, 0, 0, 1, 1, 1, 1], from: '2024 US' } : null;     // real side breaks for one demo record
+        return { found: a.id !== 'a6', demo: true, pressings, discogsMaster: null, shops: [], sides };
       },
       async play({ contextUri, offsetIndex = 0, positionMs = 0 }) {
         const [, type, id] = contextUri.split(':');
@@ -1160,8 +1174,28 @@
           look: parseLook(r.disambiguation),
         };
       });
+      // real side breaks: a vinyl pressing with the same number of songs as Spotify's album, whose tracklist
+      // positions say which side each song is on ("A1", "B3", "ONE 2"…)
+      let sides = null;
+      const want = (album.tracks || []).length;
+      const count = (r) => (r.media || []).reduce((n, m) => n + (m['track-count'] || 0), 0);
+      const cands = vinyl.filter((r) => want >= 4 && count(r) === want)
+        .sort((a, b) => (a.status === 'Official' ? 0 : 1) - (b.status === 'Official' ? 0 : 1) || String(a.date || '9').localeCompare(String(b.date || '9')))
+        .slice(0, 3);
+      for (const r of cands) {
+        try {
+          const full = await get(`release/${r.id}?inc=recordings`);
+          const keys = (full.media || []).flatMap((m) => (m.tracks || []).map((t) => String(t.number || '').trim().replace(/[\s.\-]*\d+$/, '').toUpperCase()));
+          if (keys.length !== want || keys.some((k) => !k)) continue;          // plain 1, 2, 3… says nothing about sides
+          const groups = []; let g = -1, prev = null, seen = new Set(), ok = true;
+          for (const k of keys) { if (k !== prev) { if (seen.has(k)) { ok = false; break; } seen.add(k); g++; prev = k; } groups.push(g); }
+          if (!ok || g < 1) continue;
+          sides = { groups, from: [r.date ? r.date.slice(0, 4) : '', r.country === 'XW' || r.country === 'XE' ? '' : r.country || ''].filter(Boolean).join(' ') || 'a' };
+          break;
+        } catch {}
+      }
       return {
-        found: true, mbUrl: `https://musicbrainz.org/release-group/${rgId}`,
+        found: true, mbUrl: `https://musicbrainz.org/release-group/${rgId}`, sides, sidesChecked: want >= 4,
         discogsMaster: (rels(rg).find((x) => x.type === 'discogs') || {}).url?.resource || null,
         pressings: sortPressings(pressings),
         shops: [...shops].map(([url, type]) => ({ url, type })),
@@ -1171,8 +1205,9 @@
   })();
 
   Spotify.vinyl = async (album) => {
-    const key = `tt.mb.${album.id}`;
-    try { const c = JSON.parse(store.get(key) || 'null'); if (c && Date.now() - c.at < 7 * 864e5) return c.data; } catch {}
+    const key = `tt.mb2.${album.id}`;     // v2: also stores side breaks
+    const needSides = (album.tracks || []).length >= 4;
+    try { const c = JSON.parse(store.get(key) || 'null'); if (c && Date.now() - c.at < 7 * 864e5 && (c.data.sidesChecked || !c.data.found || !needSides)) return c.data; } catch {}
     const data = await MB.lookup(album);
     store.set(key, JSON.stringify({ at: Date.now(), data }));
     return data;
@@ -1464,6 +1499,7 @@
       const data = await source().vinyl(a);
       if (vinyl.albumId !== a.id) return;
       vinyl.data = data; vinyl.status = 'done';
+      applyRealSides(a, data.sides);
       const ps = data.pressings || [];
       const saved = store.get(`tt.press.${a.id}`);
       let choice = saved != null ? Number(saved) : ps.findIndex((p) => p.look);   // special edition? show it
@@ -1533,6 +1569,8 @@
     $('vinylBtn').classList.toggle('owned', !!own.owned);
     $('vinylBtn').classList.toggle('hidden', !state.track || !a);
     $('noteBtn').classList.toggle('hidden', !state.track);
+    $('shareBtn').classList.toggle('hidden', !state.track);
+    if (typeof renderRatePill === 'function' && $('rateBtn')) try { renderRatePill(); } catch {}
 
     const b = vinyl.browse;                    // looking at a record from the wall, not the one playing
     const shown = b ? b.album : a;
@@ -1540,8 +1578,15 @@
     $('vpCover').style.backgroundImage = shown.cover ? coverCss(shown.cover) : '';
     $('vpTitle').textContent = shown.name;
     $('vpSub').textContent = [shown.artist, shown.year].filter(Boolean).join(' · ');
-    $('vpBody').innerHTML = ownHtml(shown) + vinylBodyHtml(shown, b || vinyl, !b);
+    $('vpBody').innerHTML = ownHtml(shown) + (b ? '' : sidesHtml()) + vinylBodyHtml(shown, b || vinyl, !b);
     const more = $('vpMore'); if (more) more.onclick = () => { (b || vinyl).showAll = true; renderVinyl(); };
+  }
+
+  function sidesHtml() {
+    if (!state.sides || !state.album) return '';
+    const parts = state.sides.map((sd) => `<span><b>Side ${sd.letter}</b> ${sd.end - sd.start === 1 ? `song ${sd.start + 1}` : `songs ${sd.start + 1}–${sd.end}`} · ${fmt(sd.total)}</span>`).join('');
+    const src = state.sidesFrom ? `From the ${state.sidesFrom === 'a' ? '' : `${esc(state.sidesFrom)} `}vinyl tracklist on MusicBrainz.` : 'Estimated from running times — no matching vinyl tracklist found yet.';
+    return `<h4>Sides</h4><div class="vp-sides">${parts}</div><p class="vp-fine" style="margin-top:6px">${src}</p>`;
   }
 
   // pressings + where to buy. `interactive`: radio buttons choose what the turntable shows (only for the album playing)
@@ -1701,6 +1746,180 @@
     const url = apple ? 'https://maps.apple.com/?q=record%20store' : 'https://www.google.com/maps/search/record+stores+near+me';
     return link(url, `<span>Record stores near you</span><small>opens ${apple ? 'Apple' : 'Google'} Maps · call ahead to ask</small>`, 'vp-link local');
   }
+
+  // ================================================================ "What should I play?" — a record you haven't spun in a while
+  const pick = { shown: new Set(), current: null };
+  function lastPlayedOf(name, artist) {
+    const k = Discogs.keyOf(artist, name);
+    let last = 0;
+    for (const r of Object.values(Spins.all())) {
+      if (Discogs.keyOf(r.artist, r.name) !== k) continue;
+      last = Math.max(last, r.last || 0, ...Object.values(r.heard || {}));
+    }
+    return last;
+  }
+  async function pickCandidates() {
+    const out = [], seen = new Set();
+    const add = (c) => { const k = Discogs.keyOf(c.artist, c.name); if (seen.has(k)) return; seen.add(k); out.push(c); };
+    for (const r of ((Discogs.data() || {}).owned || [])) {
+      const album = { id: `dg:${r.id}`, name: r.title, artist: r.artist, cover: r.cover, year: r.year ? String(r.year) : '' };
+      if (state.mode === 'demo' && !findOnSpotify(album)) continue;      // the demo can only play its own albums
+      add({ kind: 'owned', name: r.title, artist: r.artist, cover: r.cover, album });
+    }
+    if (state.mode !== 'idle' && !lib.items.albums && !lib.loading.albums) await loadAll('albums');
+    for (const it of lib.items.albums || []) if (it.type !== 'single' && !(it.n && it.n < 4)) add({ kind: 'saved', name: it.name, artist: it.sub, cover: it.cover, uri: it.uri });
+    return out;
+  }
+  async function pickOne() {
+    const body = $('pickBody');
+    if (!$('pickDlg').open) { body.innerHTML = '<p class="pick-note">Flipping through your crates…</p>'; $('pickDlg').showModal(); }
+    const all = await pickCandidates();
+    const cur = state.album ? Discogs.keyOf(state.album.artist, state.album.name) : '';
+    let pool = all.filter((c) => Discogs.keyOf(c.artist, c.name) !== cur && !pick.shown.has(Discogs.keyOf(c.artist, c.name)));
+    if (!pool.length && all.length) { pick.shown.clear(); pool = all.filter((c) => Discogs.keyOf(c.artist, c.name) !== cur); }
+    if (!pool.length) {
+      body.innerHTML = `<p class="pick-note">${state.mode === 'idle' ? 'Connect Spotify (or try the demo) first.' : 'Save some albums on Spotify or connect your Discogs collection, and I’ll pick from those.'}</p>`;
+      return;
+    }
+    // weight by how long it's been: records you haven't played in ages come up most; owned vinyl gets a nudge
+    const now = Date.now();
+    const weights = pool.map((c) => {
+      c.last = lastPlayedOf(c.name, c.artist);
+      const days = c.last ? (now - c.last) / 864e5 : 120;
+      return (days < 2 ? .1 : Math.min(days, 180) + 10) * (c.kind === 'owned' ? 1.6 : 1);
+    });
+    let r = Math.random() * weights.reduce((a, b) => a + b, 0), i = 0;
+    while (i < pool.length - 1 && (r -= weights[i]) > 0) i++;
+    const c = pick.current = pool[i];
+    pick.shown.add(Discogs.keyOf(c.artist, c.name));
+    const ago = c.last ? Math.round((now - c.last) / 864e5) : null;
+    const why = c.last == null || !c.last ? 'You haven’t played this one here yet'
+      : ago < 1 ? 'Played earlier today' : ago < 14 ? `Last played ${ago} day${ago === 1 ? '' : 's'} ago` : ago < 60 ? `Last played ${Math.round(ago / 7)} weeks ago` : `Last played ${Math.round(ago / 30)} months ago`;
+    const bg = c.cover && c.cover.url ? `url("${c.cover.url.replace(/"/g, '%22')}") center/cover` : c.cover && c.cover.gradient ? c.cover.gradient : placeholder(c.name);
+    body.innerHTML = `<div class="pick-card">
+        <div class="pick-sleeve"><span class="pick-disc"></span><span class="pick-cover" style="background:${esc(bg)}"></span></div>
+        <div class="pick-meta"><div class="kicker">${c.kind === 'owned' ? 'From your shelf' : 'From your saved albums'}</div>
+          <h3>${esc(c.name)}</h3><p>${esc(c.artist)}</p><small>${esc(why)}</small></div>
+      </div>
+      <div class="row"><button class="btn primary" id="pickPlay">Put it on</button><button class="btn" id="pickAgain">Another</button></div>`;
+    $('pickPlay').onclick = () => playPick(c);
+    $('pickAgain').onclick = pickOne;
+    $('pickPlay').focus();
+  }
+  function playPick(c) {
+    $('pickDlg').close();
+    noteUserNav(); cancelFlip(); state.armParked = false;
+    if (c.kind === 'saved') { source().play({ contextUri: c.uri }); toast(`Putting on “${c.name}”`, 2200); return; }
+    const uri = findOnSpotify(c.album);
+    if (uri) { source().play({ contextUri: uri }); toast(`Putting on “${c.name}”`, 2200); } else playOwned(c.album);
+  }
+  $('pickBtn').onclick = () => { if (state.mode === 'idle') { openSetup(); return; } pickOne(); };
+  $('pickClose').onclick = () => $('pickDlg').close();
+  $('pickDlg').addEventListener('click', (e) => { if (e.target === $('pickDlg')) $('pickDlg').close(); });
+
+  // ================================================================ "Now spinning" share card (1080×1920, for Stories)
+  async function makeShareCard() {
+    const W = 1080, H = 1920, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    const css = getComputedStyle(document.documentElement);
+    const c1 = css.getPropertyValue('--c1').trim() || '#7a5238', c2 = css.getPropertyValue('--c2').trim() || '#1d140f';
+    const a = state.album, t = state.track, cover = (a && a.cover) || (t && t.cover);
+    // background: the album's colours, a warm glow, a little grain
+    let bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, c2); bg.addColorStop(1, '#0d0907'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    let glow = g.createRadialGradient(W * .5, H * .38, 40, W * .5, H * .38, W * .95); glow.addColorStop(0, c1); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    g.globalAlpha = .55; g.fillStyle = glow; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
+    for (let i = 0; i < 9000; i++) { g.fillStyle = `rgba(255,255,255,${Math.random() * .035})`; g.fillRect(Math.random() * W, Math.random() * H, 2, 2); }
+
+    const img = await new Promise((res) => {
+      if (!cover || !cover.url) return res(null);
+      const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => res(null); im.src = cover.url;
+    });
+    const drawCover = (x, y, s) => {
+      if (img) { g.drawImage(img, x, y, s, s); return; }
+      const cols = (cover && cover.colors) || [c1, c2];
+      const gr = g.createLinearGradient(x, y, x + s, y + s); gr.addColorStop(0, cols[0]); gr.addColorStop(1, cols[1] || c2);
+      g.fillStyle = gr; g.fillRect(x, y, s, s);
+    };
+
+    // the record, slid halfway out of its sleeve, in the pressing that's on the turntable
+    const S = 700, sx = 110, sy = 400, R = S * .47, rx = sx + S * .5 + 250, ry = sy + S / 2;
+    const ps = (vinyl.data && vinyl.data.pressings) || [], look = vinyl.choice >= 0 && ps[vinyl.choice] ? ps[vinyl.choice].look : null;
+    g.save();
+    g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 50; g.shadowOffsetY = 18;
+    g.beginPath(); g.arc(rx, ry, R, 0, Math.PI * 2); g.fillStyle = look && look.base ? look.base : '#121212'; g.fill();
+    g.restore();
+    g.save(); g.beginPath(); g.arc(rx, ry, R, 0, Math.PI * 2); g.clip();
+    if (look && look.kind === 'picture') drawCover(rx - R, ry - R, R * 2);
+    if (look && look.kind === 'splatter') for (let i = 0; i < 70; i++) { g.fillStyle = look.accent; g.beginPath(); g.arc(rx + (Math.random() - .5) * 2 * R, ry + (Math.random() - .5) * 2 * R, 4 + Math.random() * 18, 0, 7); g.fill(); }
+    if (look && look.kind === 'marble') { const m = g.createRadialGradient(rx - R * .3, ry - R * .2, 10, rx, ry, R); m.addColorStop(0, look.accent); m.addColorStop(.6, 'rgba(0,0,0,0)'); g.fillStyle = m; g.fillRect(rx - R, ry - R, R * 2, R * 2); }
+    for (let r = R * .38; r < R * .97; r += 3.2) { g.strokeStyle = `rgba(255,255,255,${.025 + Math.random() * .03})`; g.lineWidth = 1; g.beginPath(); g.arc(rx, ry, r, 0, 7); g.stroke(); }
+    const sheen = g.createLinearGradient(rx - R, ry - R, rx + R, ry + R); sheen.addColorStop(.35, 'rgba(255,255,255,0)'); sheen.addColorStop(.5, 'rgba(255,255,255,.12)'); sheen.addColorStop(.65, 'rgba(255,255,255,0)');
+    g.fillStyle = sheen; g.fillRect(rx - R, ry - R, R * 2, R * 2);
+    if (!look || look.kind !== 'picture') { g.save(); g.beginPath(); g.arc(rx, ry, R * .34, 0, 7); g.clip(); drawCover(rx - R * .34, ry - R * .34, R * .68); g.restore(); }
+    g.fillStyle = '#0a0a0a'; g.beginPath(); g.arc(rx, ry, 9, 0, 7); g.fill();
+    g.restore();
+    // the sleeve
+    g.save(); g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 60; g.shadowOffsetY = 26; g.fillStyle = '#222'; g.fillRect(sx, sy, S, S); g.restore();
+    drawCover(sx, sy, S);
+    const shine = g.createLinearGradient(sx, sy, sx + S, sy + S); shine.addColorStop(0, 'rgba(255,255,255,.16)'); shine.addColorStop(.4, 'rgba(255,255,255,0)');
+    g.fillStyle = shine; g.fillRect(sx, sy, S, S);
+
+    // words
+    const wrap = (text, x, y, maxW, lh, maxLines) => {
+      const words = String(text).split(/\s+/); let line = '', lines = 0;
+      for (let i = 0; i < words.length; i++) {
+        const test = line ? `${line} ${words[i]}` : words[i];
+        if (g.measureText(test).width > maxW && line) {
+          if (++lines === maxLines) { while (g.measureText(`${line}…`).width > maxW) line = line.slice(0, -1); g.fillText(`${line}…`, x, y); return y + lh; }
+          g.fillText(line, x, y); y += lh; line = words[i];
+        } else line = test;
+      }
+      g.fillText(line, x, y); return y + lh;
+    };
+    const font = (w, px) => `${w} ${px}px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    let y = 1260;
+    g.fillStyle = '#e7c891'; g.font = font(800, 34); g.letterSpacing = '8px';
+    g.fillText('NOW SPINNING', 110, y); g.letterSpacing = '0px';
+    y += 96; g.fillStyle = '#fff'; g.font = font(800, 84);
+    y = wrap(a ? a.name : t ? t.name : 'Nothing playing', 110, y, W - 220, 96, 2);
+    g.fillStyle = 'rgba(255,255,255,.72)'; g.font = font(500, 50);
+    y = wrap(a ? a.artist : t ? t.artist : '', 110, y + 6, W - 220, 62, 1);
+    const extra = [];
+    if (a && t && state.albumMode && state.sides) extra.push(`Side ${state.sides[sideIndexOf(state.trackIndex)].letter} · “${t.name}”`);
+    else if (t && a && t.name !== a.name) extra.push(`“${t.name}”`);
+    const sp = a ? Spins.get(a.id) : null, own = a ? Discogs.match(a) : {};
+    if (sp && sp.spins > 1) extra.push(`${nth(sp.spins)} time front to back`);
+    if (own.owned) extra.push('On my shelf');
+    else if (look) extra.push(`${pressName(ps[vinyl.choice])} pressing`);
+    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = font(500, 40);
+    for (const line of extra.slice(0, 3)) { y = wrap(line, 110, y + 18, W - 220, 50, 1); }
+    // footer: wordmark + the turntable's finish
+    const fin = css.getPropertyValue('--pl-a').trim() || '#b98f55';
+    g.fillStyle = fin; g.beginPath(); g.arc(134, H - 150, 24, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2; g.stroke();
+    g.fillStyle = '#fff'; g.font = font(800, 40); g.fillText('The Vinyl Shelf', 180, H - 136);
+    return new Promise((res) => cv.toBlob((b) => res(b), 'image/png'));
+  }
+  let shareUrl = null;
+  async function openShare() {
+    if (!state.track) return;
+    $('shareImg').removeAttribute('src'); $('shareDlg').showModal();
+    let blob = null;
+    try { blob = await makeShareCard(); } catch {}
+    if (!blob) { $('shareDlg').close(); toast('Couldn’t make the card for this one'); return; }
+    if (shareUrl) URL.revokeObjectURL(shareUrl);
+    shareUrl = URL.createObjectURL(blob);
+    $('shareImg').src = shareUrl; $('shareSave').href = shareUrl;
+    const name = `now-spinning-${(state.album ? state.album.name : state.track.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'record'}.png`;
+    $('shareSave').download = name;
+    const file = new File([blob], name, { type: 'image/png' });
+    const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+    $('shareGo').classList.toggle('hidden', !canShare);
+    $('shareGo').onclick = async () => { try { await navigator.share({ files: [file] }); } catch {} };
+  }
+  $('shareBtn').onclick = openShare;
+  $('shareClose').onclick = () => $('shareDlg').close();
+  $('shareDlg').addEventListener('click', (e) => { if (e.target === $('shareDlg')) $('shareDlg').close(); });
 
   // open the vinyl panel for any album (from the "My vinyl" shelves)
   async function openVinylFor(album) {
@@ -1978,11 +2197,26 @@
         lib.items.wants, d.wantsHidden ? 'Your Discogs wantlist is private — add a personal access token in Settings to see it.' : 'Nothing on your Discogs wantlist.');
       n += lib.items.owned.length + lib.items.wants.length;
     }
+    // your ratings, as a shelf with the stars on each sleeve
+    lib.items.rated = Reviews.allMine().map((r) => ({ id: `rv:${r.key}`, uri: '', name: r.name, sub: r.artist, cover: r.cover,
+      badge: r.rating ? `★ ${starLabel(r.rating)}` : 'Reviewed', album: { id: r.spotifyId || `rv:${r.key}`, name: r.name, artist: r.artist, cover: r.cover } }));
+    if (lib.items.rated.length || !q) html += group('rated', 'Your ratings', 'Albums you’ve rated or reviewed · tap one to read or edit',
+      lib.items.rated, 'Rate what’s playing with the ★ button under the album, or press W.');
+    if (Reviews.remoteOn || state.mode === 'demo') html += `<div class="vgroup"><h3 class="vgroup-title">Latest reviews<small>What other listeners are saying</small></h3><div id="rvFeed"><p class="wall-note">Loading…</p></div></div>`;
     const notes = Notes.all().filter((n) => !q || `${n.name} ${n.artist} ${n.text}`.toLowerCase().includes(q));
     html += `<div class="vgroup"><h3 class="vgroup-title">Listening diary<small>Notes you’ve written while records played · press N to add one</small></h3>${
       notes.length ? `<ul class="notes diary">${notesHtml(notes.slice(0, 60), true)}</ul>` : '<p class="wall-note">No notes yet. Tap “Note” under the album while something plays.</p>'}</div>`;
     shelves.innerHTML = html;
     const vc = $('vConnect'); if (vc) vc.onclick = () => { openSetup(); setTimeout(() => $('discogsUser').focus(), 50); };
+    if ($('rvFeed')) Reviews.recent().then((list) => {
+      const box = $('rvFeed'); if (!box) return;
+      lib.items.feed = list || [];
+      box.innerHTML = list && list.length ? `<ul class="notes diary rv-feed">${list.map((r, i) => `<li class="note" data-feed="${i}" role="button" tabindex="0">
+          <span class="note-cover" style="background:${esc(r.album.cover ? `${coverCss(r.album.cover)} center/cover` : placeholder(r.album.name))}"></span>
+          <div><div class="note-meta"><b>${esc(r.name)}</b> on <b>${esc(r.album.name)}</b> · ${esc(r.album.artist)} · ${esc(noteDate(r.at))}</div>
+          ${r.rating ? starsHtml(r.rating) : ''}${r.body ? `<p>${esc(r.body)}</p>` : ''}</div></li>`).join('')}</ul>`
+        : '<p class="wall-note">No reviews yet. Rate what’s playing to start things off.</p>';
+    }).catch(() => { const box = $('rvFeed'); if (box) box.innerHTML = '<p class="wall-note">Couldn’t load reviews right now.</p>'; });
     const vl = $('vLastfm'); if (vl) vl.onclick = () => { openSetup(); setTimeout(() => $('lastfmUser').focus(), 50); };
     return n || (q ? 0 : 1);
   }
@@ -1995,7 +2229,7 @@
     const own = kind === 'albums' ? Discogs.match({ name: it.name, artist: it.sub }) : kind === 'worth' ? { wanted: it.wanted } : {};
     const sticker = own.owned ? '<span class="sticker owned" title="On your shelf">✓</span>' : own.wanted ? '<span class="sticker wanted" title="On your wishlist">♥</span>' : '';
     const badge = it.badge ? `<span class="rec-badge${it.drop ? ' drop' : ''}">${esc(it.badge)}</span>` : '';
-    const verb = kind === 'worth' || kind === 'wants' ? 'Pressings for' : 'Play';
+    const verb = kind === 'worth' || kind === 'wants' ? 'Pressings for' : kind === 'rated' ? 'Reviews for' : 'Play';
     return `<button class="rec" data-kind="${kind}" data-i="${i}" data-uri="${esc(it.uri)}" style="--tilt:${tilt}deg" title="${verb} ${esc(it.name)}" aria-label="${verb} ${esc(it.name)}">
       <span class="cover" style="background:${esc(bg)}">${it.cover ? '' : initial}${img}${badge}</span>${sticker}</button>`;
   }
@@ -2033,9 +2267,12 @@
 
   let pulling = false;
   $('wallScroll').addEventListener('click', (e) => {
+    const f = e.target.closest('[data-feed]');
+    if (f) { const r = (lib.items.feed || [])[Number(f.dataset.feed)]; if (r) openReviews(r.album); return; }
     const b = e.target.closest('[data-i][data-kind]'); if (!b || pulling) return;
     const it = (lib.items[b.dataset.kind] || [])[Number(b.dataset.i)]; if (!it) return;
     if (b.dataset.kind === 'worth' || b.dataset.kind === 'wants') { openVinylFor(it.album); return; }
+    if (b.dataset.kind === 'rated') { openReviews(it.album); return; }
     let uri = it.uri;
     if (b.dataset.kind === 'owned') {
       uri = findOnSpotify(it.album);
@@ -2079,6 +2316,7 @@
     const dc = Discogs.config() || {};
     $('discogsUser').value = dc.user || ''; $('discogsToken').value = dc.token || '';
     renderDiscogsStatus();
+    renderProfile();
     const lc = LastFm.config() || {};
     $('lastfmUser').value = lc.user || ''; $('lastfmKey').value = lc.key || '';
     renderLastFmStatus();
@@ -2144,7 +2382,7 @@
   });
 
   addEventListener('keydown', (e) => {
-    if (dialog.open || $('noteDlg').open || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) {
+    if (dialog.open || $('noteDlg').open || $('pickDlg').open || $('shareDlg').open || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) {
       if (e.key === 'Escape' && e.target.id === 'libSearch') closePanel($('library'));
       return;
     }
@@ -2161,7 +2399,12 @@
     else if (e.key === 'l') $('libraryBtn').click();
     else if (e.key === 'v') $('vinylBtn').click();
     else if (e.key === 'n' && state.track) { e.preventDefault(); openNote(); }
+    else if (e.key === 'r') $('pickBtn').click();
+    else if (e.key === 'w' && state.album) { e.preventDefault(); openReviews(state.album); }
+    else if (e.key === 's' && state.track) openShare();
     else if (e.key === 't' && document.body.classList.contains('has-album') && !isDocked()) $('tracklistBtn').click();
+    else if ((e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack' || e.key === 'Backspace') && document.body.classList.contains('tv')
+      && !document.querySelector('.panel.open') && !(document.fullscreenElement || document.webkitFullscreenElement)) { e.preventDefault(); exitTv(); }
     else if (e.key === 'Escape') document.querySelectorAll('.panel.open').forEach(closePanel);
   });
 
@@ -2190,7 +2433,17 @@
       if (fsSupported && !(document.fullscreenElement || document.webkitFullscreenElement)) { try { toggleFullscreen(); } catch {} }
     };
     addEventListener('pointerdown', goFull, { once: true });
-    addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) goFull(); }, { once: true });
+    const goFullKey = (e) => {
+      if (['Shift', 'Control', 'Alt', 'Meta', 'Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(e.key)) return;   // those mean "get me out"
+      removeEventListener('keydown', goFullKey); goFull();
+    };
+    addEventListener('keydown', goFullKey);
+    // leaving full screen (Esc) shows the way out of TV mode
+    const onFs = () => {
+      if (document.fullscreenElement || document.webkitFullscreenElement) return;
+      wake(); toast('Press Esc again or Exit TV mode to leave TV mode', 5000);
+    };
+    document.addEventListener('fullscreenchange', onFs); document.addEventListener('webkitfullscreenchange', onFs);
     // dim after a few minutes paused, so a still picture doesn't burn into the screen
     let pausedSince = 0;
     setInterval(() => {
@@ -2201,10 +2454,21 @@
     addEventListener('keydown', () => document.body.classList.remove('tv-dim'));
     addEventListener('pointermove', () => document.body.classList.remove('tv-dim'));
   }
+  // TV mode lives in the address (?tv), so a bookmark on the TV opens straight into it.
+  // Leaving swaps the address without ?tv (replace, so Back doesn't land you in TV mode again).
+  const urlWith = (q) => { const str = q.toString().replace(/=(&|$)/g, '$1'); return `${location.pathname}${str ? `?${str}` : ''}${location.hash}`; };
+  function exitTv() {
+    const q = new URLSearchParams(location.search); q.delete('tv');
+    if (document.fullscreenElement || document.webkitFullscreenElement) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch {} }
+    location.replace(urlWith(q));
+  }
+  $('tvBtn').textContent = tvMode ? 'Exit TV mode' : 'Open TV mode';
   $('tvBtn').onclick = () => {
+    if (tvMode) { exitTv(); return; }
     const q = new URLSearchParams(location.search); q.set('tv', '');
-    location.href = `${location.pathname}?${q.toString().replace(/=(&|$)/g, '$1')}`;
+    location.href = urlWith(q);
   };
+  $('tvExit').onclick = exitTv;
   // "Up next" line (TV mode): the next song on the album
   function renderUpNext() {
     const el = $('upNext'), a = state.album, i = state.trackIndex;
@@ -2260,6 +2524,376 @@
     spines($('shelfA'), 520, 1060, 330, 118, 160, [728, 896]);
     spines($('shelfB'), 520, 1060, 560, 150, 175);
     [210, 510, 810, 1110].forEach((x) => spines($('cubbies'), x + 6, x + 274, 936, 112, 138));
+  })();
+
+  // ================================================================ ratings & reviews
+  // Your own reviews always live on this device first (so rating works offline and without an account).
+  // If config.js has a Supabase project, signed-in reviews are also shared, and everyone's show up per album.
+  const Reviews = (() => {
+    const CFG = window.TVS_CONFIG || {};
+    const remoteOn = !!(CFG.supabaseUrl && CFG.supabaseAnonKey);
+    const lkey = () => (state.mode === 'demo' ? 'tt.reviews.demo' : 'tt.reviews');
+    let sb = null, session = null, profile = null, loading = null;
+    const keyOf = (a) => Discogs.keyOf(a.artist || a.sub, a.name);
+    const localAll = () => { try { return JSON.parse(store.get(lkey()) || '{}') || {}; } catch { return {}; } };
+    const localSet = (all) => store.set(lkey(), JSON.stringify(all));
+    const coverUrl = (c) => (c && c.url && /^https:\/\//.test(c.url) ? c.url : null);
+
+    // ---- demo: a few made-up listeners so the community side can be explored
+    const PEOPLE = ['Maya R.', 'jules', 'Theo', 'crate_digger', 'Priya', 'sam w.', 'Noor', 'Ben K.'];
+    const LINES = [
+      'Side B is where it really opens up. Best on a rainy afternoon.',
+      'The pressing I have is a little noisy but the songs carry it.',
+      'Took me three listens. Now I can’t stop.',
+      'Front to back, no skips. The closer gets me every time.',
+      'Pretty but a bit samey in the middle.',
+      'Bought this after hearing one song in a coffee shop. Zero regrets.',
+      'The bass on vinyl is so much warmer than streaming.',
+      'Good, not great. The singles are the highlights.',
+    ];
+    function demoFor(a) {
+      const h = hashOf(keyOf(a)), n = 2 + (h % 4), out = [];
+      for (let i = 0; i < n; i++) {
+        const k = (h >>> (i * 3)) + i * 7;
+        out.push({ id: `d${i}`, name: PEOPLE[k % PEOPLE.length], rating: 5 + ((k >> 2) % 6), body: (k % 5) === 0 ? '' : LINES[(k >> 1) % LINES.length], at: Date.now() - ((k % 40) + 1) * 864e5 });
+      }
+      return out;
+    }
+
+    // ---- Supabase, loaded only when it's configured and needed
+    async function client() {
+      if (!remoteOn) return null;
+      if (sb) return sb;
+      if (!loading) loading = (async () => {
+        await new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js';
+          s.onload = res; s.onerror = rej; document.head.append(s);
+        });
+        const c = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
+          auth: { persistSession: true, detectSessionInUrl: true, flowType: 'implicit', storageKey: 'tt.sb' },
+        });
+        session = (await c.auth.getSession()).data.session;
+        c.auth.onAuthStateChange((_e, s) => {
+          const was = session && session.user.id; session = s;
+          if ((s && s.user.id) !== was) onSignedInChange();
+        });
+        sb = c;
+        if (session) await onSignedInChange(true);
+        return c;
+      })();
+      try { return await loading; } catch { loading = null; return null; }
+    }
+    async function onSignedInChange(quiet) {
+      profile = null;
+      if (session) {
+        let res = await sb.from('profiles').select('display_name').eq('id', session.user.id).maybeSingle();
+        if (res.error) { await new Promise((r) => setTimeout(r, 800)); res = await sb.from('profiles').select('display_name').eq('id', session.user.id).maybeSingle(); }
+        profile = res.data || null;
+        // the name typed before signing in: this browser's copy, or the one saved on the account (works when the link opens elsewhere)
+        const meta = (session.user.user_metadata || {}).display_name;
+        const pending = store.get('tt.pendingName') || (typeof meta === 'string' ? meta.trim().slice(0, 40) : '');
+        if (!profile && pending && !res.error) {
+          const { data: made } = await sb.from('profiles').upsert({ id: session.user.id, display_name: pending }).select('display_name').single();
+          profile = made;
+        }
+        if (profile) { store.del('tt.pendingName'); await syncMine(); }
+        if (!quiet) toast(profile ? `Signed in as ${profile.display_name}` : 'Signed in — add a display name in Settings to share reviews', 4000);
+      }
+      renderProfile(); refreshReviewUI();
+    }
+    // on sign-in: bring your shared reviews here, and share the ones you wrote on this device
+    async function syncMine() {
+      if (!sb || !session || !profile) return;
+      const { data, error } = await sb.from('reviews').select('album_key, spotify_album_id, album_name, artist, cover_url, rating, body, updated_at').eq('user_id', session.user.id);
+      if (error) return;
+      const all = localAll(), remote = new Map(data.map((r) => [r.album_key, r]));
+      for (const r of data) {
+        const l = all[r.album_key], at = Date.parse(r.updated_at);
+        if (!l || l.at < at) all[r.album_key] = { rating: r.rating, body: r.body || '', at, name: r.album_name, artist: r.artist, cover: r.cover_url ? { url: r.cover_url } : null, spotifyId: r.spotify_album_id };
+      }
+      localSet(all);
+      const up = Object.entries(all).filter(([k, l]) => !remote.has(k) || Date.parse(remote.get(k).updated_at) < l.at);
+      for (const [k, l] of up) await push(k, l);
+    }
+    async function push(key, l) {
+      if (!sb || !session || !profile) return false;
+      const { error } = await sb.from('reviews').upsert({
+        user_id: session.user.id, album_key: key, spotify_album_id: l.spotifyId || null, album_name: l.name.slice(0, 300), artist: (l.artist || '').slice(0, 300),
+        cover_url: coverUrl(l.cover), rating: l.rating || null, body: (l.body || '').slice(0, 2000) || null, updated_at: new Date(l.at).toISOString(),
+      }, { onConflict: 'user_id,album_key' });
+      return !error;
+    }
+
+    return {
+      remoteOn, keyOf,
+      signedIn: () => !!(session && profile),
+      session: () => session, profile: () => profile, client,
+      mine: (a) => localAll()[keyOf(a)] || null,
+      allMine: () => Object.entries(localAll()).map(([key, r]) => ({ key, ...r })).sort((a, b) => b.at - a.at),
+      async save(a, rating, body) {
+        const key = keyOf(a), all = localAll();
+        const l = all[key] = { rating: rating || null, body: (body || '').trim().slice(0, 2000), at: Date.now(), name: a.name, artist: a.artist, cover: a.cover && a.cover.url ? { url: a.cover.url } : a.cover || null, spotifyId: /^[A-Za-z0-9]{22}$/.test(a.id || '') ? a.id : null };
+        localSet(all);
+        if (!remoteOn || state.mode === 'demo') return 'local';
+        await client();
+        return (await push(key, l)) ? 'shared' : session ? 'local-failed' : 'local';
+      },
+      async remove(a) {
+        const key = keyOf(a), all = localAll(); delete all[key]; localSet(all);
+        if (sb && session) await sb.from('reviews').delete().eq('user_id', session.user.id).eq('album_key', key);
+      },
+      // everyone's reviews for one album (newest first)
+      async forAlbum(a) {
+        if (state.mode === 'demo') return demoFor(a);
+        if (!remoteOn) return null;
+        const c = await client(); if (!c) return null;
+        const { data, error } = await c.from('reviews').select('id, rating, body, updated_at, user_id, profiles(display_name)')
+          .eq('album_key', keyOf(a)).order('updated_at', { ascending: false }).limit(60);
+        if (error) throw error;
+        return data.map((r) => ({ id: r.id, name: (r.profiles && r.profiles.display_name) || 'Someone', rating: r.rating, body: r.body || '', at: Date.parse(r.updated_at), mine: session && r.user_id === session.user.id }));
+      },
+      // the latest reviews from everyone, for the record wall
+      async recent() {
+        if (state.mode === 'demo') {
+          return Demo.albums.slice(0, 5).map((a, i) => ({ ...demoFor(a)[0], at: Date.now() - (i + 1) * 3600e3 * 7, album: { id: a.id, name: a.name, artist: a.artist, cover: a.cover } }));
+        }
+        if (!remoteOn) return null;
+        const c = await client(); if (!c) return null;
+        const { data, error } = await c.from('reviews').select('id, rating, body, updated_at, album_name, artist, cover_url, spotify_album_id, profiles(display_name)')
+          .order('updated_at', { ascending: false }).limit(20);
+        if (error) throw error;
+        return data.map((r) => ({ id: r.id, name: (r.profiles && r.profiles.display_name) || 'Someone', rating: r.rating, body: r.body || '', at: Date.parse(r.updated_at),
+          album: { id: r.spotify_album_id || `rv:${r.id}`, name: r.album_name, artist: r.artist, cover: r.cover_url ? { url: r.cover_url } : null } }));
+      },
+      async sendLink(email, name) {
+        const c = await client(); if (!c) throw new Error('Community reviews aren’t set up');
+        store.set('tt.pendingName', name);
+        const { error } = await c.auth.signInWithOtp({ email, options: { emailRedirectTo: `${location.origin}${location.pathname}`, data: { display_name: name } } });
+        if (error) throw error;
+      },
+      // the code from the email, typed into this tab, signs in without opening the link
+      async verifyCode(email, code) {
+        const c = await client(); if (!c) throw new Error('Community reviews aren’t set up');
+        const { error } = await c.auth.verifyOtp({ email, token: code, type: 'email' });
+        if (error) throw error;
+      },
+      async setName(name) {
+        if (!sb || !session) return false;
+        const { data, error } = await sb.from('profiles').upsert({ id: session.user.id, display_name: name }).select('display_name').single();
+        if (error) return false;
+        const first = !profile; profile = data;
+        if (first) await syncMine();
+        return true;
+      },
+      async signOut() { if (sb) await sb.auth.signOut(); session = null; profile = null; renderProfile(); refreshReviewUI(); },
+    };
+  })();
+
+  // ---- star helpers. Ratings are stored as half-stars (1–10) and shown as 0.5–5 stars.
+  const starsHtml = (r, cls = '') => `<span class="stars ${cls}" style="--v:${(r || 0) / 2}" role="img" aria-label="${(r || 0) / 2} out of 5 stars"></span>`;
+  const starLabel = (r) => `${r / 2}`.replace(/\.0$/, '');
+  function starInput(value, onChange) {
+    const wrap = document.createElement('div');
+    wrap.className = 'star-input'; wrap.tabIndex = 0; wrap.setAttribute('role', 'slider');
+    wrap.setAttribute('aria-label', 'Your rating'); wrap.setAttribute('aria-valuemin', '0'); wrap.setAttribute('aria-valuemax', '5');
+    let v = value || 0;
+    const paint = (x) => { wrap.style.setProperty('--v', x / 2); wrap.setAttribute('aria-valuenow', String(v / 2)); wrap.setAttribute('aria-valuetext', v ? `${starLabel(v)} stars` : 'Not rated'); };
+    const set = (x) => { v = clamp(x, 0, 10); paint(v); onChange(v); };
+    wrap.innerHTML = '<span class="stars big"></span>' + Array.from({ length: 10 }, (_, i) => `<button type="button" data-v="${i + 1}" tabindex="-1" aria-hidden="true"></button>`).join('');
+    wrap.addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (b) set(Number(b.dataset.v) === v ? 0 : Number(b.dataset.v)); });
+    wrap.addEventListener('pointerover', (e) => { const b = e.target.closest('button[data-v]'); if (b) paint(Number(b.dataset.v)); });
+    wrap.addEventListener('pointerleave', () => paint(v));
+    wrap.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); set(v + 1); }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); set(v - 1); }
+    });
+    paint(v);
+    return wrap;
+  }
+
+  // ---- the reviews panel (works for the album playing, or any album from the wall)
+  const rv = { album: null, req: 0 };
+  function openReviews(album) {
+    if (!album) return;
+    rv.album = album;
+    renderReviews();
+    openPanel($('reviewsPanel'));
+  }
+  function renderReviews() {
+    const a = rv.album; if (!a) return;
+    const req = ++rv.req;
+    $('rvCover').style.backgroundImage = a.cover ? coverCss(a.cover) : '';
+    $('rvTitle').textContent = a.name;
+    $('rvSub').textContent = [a.artist, a.year].filter(Boolean).join(' · ');
+    const mine = Reviews.mine(a);
+    let draft = { rating: mine ? mine.rating || 0 : 0, body: mine ? mine.body || '' : '' };
+    const who = state.mode === 'demo' ? 'Demo mode — saved on this device only.'
+      : Reviews.signedIn() ? `Shown publicly as <b>${esc(Reviews.profile().display_name)}</b>.`
+      : Reviews.remoteOn ? 'Only on this device until you sign in (Settings → Profile &amp; reviews).'
+      : 'Saved on this device.';
+    const body = $('rvBody');
+    body.innerHTML = `<h4>Your review</h4>
+      <div class="rv-mine"><div id="rvStars"></div>
+        <textarea id="rvText" rows="4" maxlength="2000" placeholder="What do you think of this record?">${esc(draft.body)}</textarea>
+        <div class="row"><button class="btn primary" id="rvSave">${mine ? 'Update review' : 'Save review'}</button>${mine ? '<button class="btn" id="rvDelete">Delete</button>' : ''}</div>
+        <p class="vp-fine">${who}</p></div>
+      <h4>From other listeners</h4><div id="rvCommunity"><p class="vp-note">Loading reviews…</p></div>`;
+    $('rvStars').append(starInput(draft.rating, (v) => { draft.rating = v; }));
+    $('rvSave').onclick = async () => {
+      draft.body = $('rvText').value;
+      if (!draft.rating && !draft.body.trim()) { toast('Pick a star rating or write a few words first'); return; }
+      $('rvSave').disabled = true;
+      const res = await Reviews.save(a, draft.rating, draft.body);
+      toast(res === 'shared' ? 'Review shared' : res === 'local-failed' ? 'Saved here — couldn’t reach the review server, will retry next sign-in' : 'Review saved');
+      refreshReviewUI();
+    };
+    const del = $('rvDelete');
+    if (del) del.onclick = async () => { await Reviews.remove(a); toast('Review deleted'); refreshReviewUI(); };
+    // community
+    Reviews.forAlbum(a).then((list) => {
+      if (req !== rv.req) return;
+      const box = $('rvCommunity');
+      if (list == null) { box.innerHTML = '<p class="vp-note">Only you can see your reviews for now. Reviews from other listeners show up here once community reviews are switched on.</p>'; return; }
+      const others = list.filter((r) => !r.mine && !(state.mode === 'demo' && false));
+      const rated = list.filter((r) => r.rating);
+      const avg = rated.length ? rated.reduce((s, r) => s + r.rating, 0) / rated.length : 0;
+      let h = rated.length ? `<div class="rv-avg">${starsHtml(Math.round(avg), 'big')}<span><b>${(avg / 2).toFixed(1)}</b> from ${rated.length} rating${rated.length === 1 ? '' : 's'}</span></div>` : '';
+      h += others.length ? `<ul class="notes rv-list">${others.map((r) => `<li class="note"><div><div class="note-meta"><b>${esc(r.name)}</b> · ${esc(noteDate(r.at))}</div>
+          ${r.rating ? starsHtml(r.rating) : ''}${r.body ? `<p>${esc(r.body)}</p>` : ''}</div></li>`).join('')}</ul>`
+        : '<p class="vp-note">No one else has reviewed this one yet. Be the first.</p>';
+      box.innerHTML = h;
+    }).catch(() => { if (req === rv.req) $('rvCommunity').innerHTML = '<p class="vp-note">Couldn’t load reviews right now.</p>'; });
+  }
+  // keep the pill, the panel and the wall in step after a change
+  function refreshReviewUI() {
+    renderRatePill();
+    if ($('reviewsPanel').classList.contains('open')) renderReviews();
+    if (wallOpen() && lib.tab === 'vinyl') renderWall();
+  }
+  function renderRatePill() {
+    const a = state.album, mine = a ? Reviews.mine(a) : null;
+    $('rateBtn').classList.toggle('hidden', !a);
+    $('rateText').textContent = mine && mine.rating ? starLabel(mine.rating) : mine ? 'Reviewed' : 'Rate';
+    $('rateBtn').classList.toggle('rated', !!(mine && mine.rating));
+  }
+  $('rateBtn').onclick = () => { if (state.album) openReviews(state.album); };
+
+  // ---- settings: profile / sign-in
+  const emailSender = () => ((window.TVS_CONFIG || {}).emailSender || 'Supabase Auth');
+  let codeFor = ''; // the email a sign-in code was just sent to
+  let sentUntil = 0, sentTimer = 0; // after sending, the button reads "Sent" and waits 10 seconds
+  function renderProfile() {
+    const st = $('profileStatus'), form = $('profileForm');
+    if (state.mode === 'demo') { st.textContent = 'Demo mode — reviews are saved on this device, and other listeners’ reviews are made up.'; form.classList.add('hidden'); return; }
+    if (!Reviews.remoteOn) { st.textContent = 'Your ratings and reviews are saved on this device. Sharing reviews with other listeners isn’t switched on for this app yet.'; form.classList.add('hidden'); return; }
+    form.classList.remove('hidden');
+    const s = Reviews.session(), p = Reviews.profile();
+    $('profileEmailWrap').classList.toggle('hidden', !!s);
+    $('profileCodeWrap').classList.toggle('hidden', !!s || !codeFor);
+    if (s) codeFor = '';
+    $('profileOut').classList.toggle('hidden', !s);
+    const wait = s ? 0 : Math.ceil((sentUntil - Date.now()) / 1000);
+    $('profileGo').textContent = s ? 'Save name' : wait > 0 ? `Sent · ${wait}s` : codeFor ? 'Send a new code' : 'Email me a sign-in link';
+    $('profileGo').classList.toggle('primary', !!s || !codeFor);
+    $('profileGo').classList.toggle('sent', wait > 0);
+    $('profileGo').disabled = wait > 0;
+    if (s) { st.innerHTML = p ? `Signed in as <b>${esc(p.display_name)}</b> (${esc(s.user.email || '')}). Your reviews are shared.` : `Signed in as ${esc(s.user.email || '')}. Pick a display name to share your reviews.`; $('profileName').value = p ? p.display_name : ''; }
+    else st.innerHTML = `Sign in to share your reviews and read other listeners’. We’ll email you a link and a code — no password. Look for an email from <b>${esc(emailSender())}</b>.`;
+  }
+  $('profileGo').onclick = async () => {
+    const name = $('profileName').value.trim();
+    if (!name) { toast('Pick a display name'); return; }
+    if (Reviews.session()) { toast(await Reviews.setName(name) ? 'Name saved' : 'Couldn’t save your name'); renderProfile(); refreshReviewUI(); return; }
+    const email = $('profileEmail').value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('Enter your email address'); return; }
+    $('profileGo').disabled = true;
+    try {
+      await Reviews.sendLink(email, name); codeFor = email;
+      sentUntil = Date.now() + 10000; clearInterval(sentTimer);
+      sentTimer = setInterval(() => { renderProfile(); if (Date.now() >= sentUntil) clearInterval(sentTimer); }, 250);
+      renderProfile();
+      toast(`Sent to ${email}. Look for an email from ${emailSender()} (check spam too).`, 8000);
+      $('profileCode').value = ''; $('profileCode').focus();
+    } catch (e) { toast(`Couldn’t send the link: ${e.message || 'try again'}`, 6000); $('profileGo').disabled = false; }
+  };
+  async function submitCode() {
+    const code = $('profileCode').value.replace(/\D/g, '');
+    if (code.length < 6) { toast('Enter the code from the email'); return; }
+    $('profileCodeGo').disabled = true;
+    try { await Reviews.verifyCode(codeFor, code); }
+    catch (e) { toast(/expired|invalid/i.test(e.message || '') ? 'That code didn’t work — it may have expired. Send a new one.' : `Couldn’t sign in: ${e.message || 'try again'}`, 6000); }
+    $('profileCodeGo').disabled = false;
+  }
+  $('profileCodeGo').onclick = submitCode;
+  $('profileCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitCode(); } });
+  $('profileOut').onclick = async () => { await Reviews.signOut(); toast('Signed out'); };
+  // finish a sign-in link, or restore an earlier session
+  if (Reviews.remoteOn && (/access_token=|error_description=/.test(location.hash) || store.get('tt.sb'))) Reviews.client().then(renderProfile);
+
+  // ================================================================ background scenes: Home, Vinyl room, Party, Skyline
+  const SCENES = [['home', 'Home', 'linear-gradient(160deg,#fbe8c6 0 22%,#5c4838 22% 70%,#30241c 70%)'],
+    ['vinyl', 'Vinyl room', 'linear-gradient(160deg,#2f3a33 0 30%,#b98a5c 30% 34%,#3a463e 34% 70%,#5a3b28 70%)'],
+    ['party', 'Party', 'conic-gradient(from 200deg at 50% 10%,#ff4fa3,#3a1f4a 18%,#4fc3ff 30%,#0b0710 45%,#ff4fa3 60%,#0b0710 75%)'],
+    ['skyline', 'Skyline', 'linear-gradient(180deg,#0b1330 0,#2a2a5a 55%,#6b4a6e 72%,#141118 72%)']];
+  function setScene(id) {
+    if (!SCENES.some(([s]) => s === id)) id = 'home';
+    document.querySelectorAll('.room[data-scene]').forEach((r) => r.classList.toggle('on', r.dataset.scene === id));
+    document.body.dataset.scene = id; store.set('tt.scene', id);
+    document.querySelectorAll('.scene-opt').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.scene === id)));
+  }
+  $('scenes').innerHTML = SCENES.map(([id, name, bg]) =>
+    `<button class="scene-opt" role="radio" data-scene="${id}" aria-checked="false"><i style="background:${bg}"></i>${name}</button>`).join('');
+  $('scenes').setAttribute('role', 'radiogroup');
+  $('scenes').addEventListener('click', (e) => { const b = e.target.closest('.scene-opt'); if (b) setScene(b.dataset.scene); });
+  setScene(store.get('tt.scene') || 'home');
+
+  (function buildScenes() {
+    const R = rng(7), NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); parent.append(n); return n; };
+    const covers = ['#c0874f', '#2f4a3e', '#d9c7a5', '#5b6b8a', '#8a4f63', '#e2b65f', '#1f2b38', '#c9a99a', '#b5643c', '#6f7d5a', '#efe6d6', '#7a3b2e', '#3c6e8f', '#d4573b', '#9bb59a'];
+    // vinyl room: a pegboard of face-out records, and crates on the floor
+    const wall = $('vrWallRecords');
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 11; col++) {
+      const x = 110 + col * 128, y = 180 + row * 145;
+      if (x > 690 && x < 900 && row < 2) continue;                // room for the record that's playing
+      el('rect', { x, y, width: 112, height: 112, fill: covers[Math.floor(R() * covers.length)], opacity: (.75 + R() * .25).toFixed(2) }, wall);
+      if (R() < .5) el('circle', { cx: x + 56, cy: y + 56, r: 18 + R() * 26, fill: covers[Math.floor(R() * covers.length)], opacity: .8 }, wall);
+      el('rect', { x: x - 4, y: y + 112, width: 120, height: 5, fill: '#1b130d' }, wall);
+    }
+    const crates = $('vrCrates');
+    for (let i = 0; i < 6; i++) {
+      const x = 70 + i * 250, y = 760;
+      for (let k = 0; k < 14; k++) el('rect', { x: x + 8 + k * 14, y: y - 40 - R() * 30, width: 11, height: 110, fill: covers[Math.floor(R() * covers.length)] }, crates);
+      el('rect', { x, y, width: 220, height: 130, rx: 4, fill: 'url(#vrCrate)' }, crates);
+      el('rect', { x: x + 70, y: y + 30, width: 80, height: 18, rx: 9, fill: '#5a3b26' }, crates);
+    }
+    // party: bulbs on the string, sparkles off the mirror ball
+    const bulbs = $('ptBulbs'), cols = ['#ffd27a', '#ff6fb1', '#7fd6ff', '#b6ff8a'];
+    for (let i = 0; i <= 32; i++) {
+      const x = i * 50, y = 44 + 26 * Math.sin((i / 32) * Math.PI * 4) ** 2;
+      el('circle', { cx: x, cy: y + 10, r: 7, fill: cols[i % cols.length], class: 'pt-bulb', style: `animation-delay:${(R() * 3).toFixed(2)}s` }, bulbs);
+    }
+    const sp = $('ptSparkles');
+    for (let i = 0; i < 70; i++) {
+      el('circle', { cx: (R() * 1600).toFixed(0), cy: (140 + R() * 620).toFixed(0), r: (1.5 + R() * 3).toFixed(1), fill: '#fff', class: 'pt-sparkle', style: `animation-delay:${(R() * 4).toFixed(2)}s` }, sp);
+    }
+    // skyline: stars, then buildings with lit windows
+    const stars = $('skStars');
+    for (let i = 0; i < 90; i++) el('circle', { cx: (R() * 1360).toFixed(0), cy: (R() * 300).toFixed(0), r: (R() * 1.6 + .4).toFixed(1), fill: '#fff', opacity: (.3 + R() * .6).toFixed(2), class: R() < .3 ? 'sk-twinkle' : '' , style: `animation-delay:${(R() * 5).toFixed(2)}s` }, stars);
+    const city = $('skCity');
+    for (const [layer, shade, hMin, hMax] of [[0, '#2a2547', 140, 300], [1, '#191632', 180, 400], [2, '#0f0d22', 120, 260]]) {
+      let x = -20;
+      while (x < 1380) {
+        const w = 50 + R() * 110, h = hMin + R() * (hMax - hMin), top = 700 - h;
+        el('rect', { x: x.toFixed(0), y: top.toFixed(0), width: w.toFixed(0), height: h.toFixed(0), fill: shade }, city);
+        if (layer && R() < .25) el('rect', { x: (x + w / 2 - 2).toFixed(0), y: (top - 40).toFixed(0), width: 4, height: 40, fill: shade }, city);
+        if (layer) for (let wy = top + 14; wy < 690; wy += 22) for (let wx = x + 10; wx < x + w - 12; wx += 18) {
+          if (R() < .32) el('rect', { x: wx.toFixed(0), y: wy.toFixed(0), width: 8, height: 11, fill: R() < .8 ? '#ffd98f' : '#bfe0ff', opacity: (.45 + R() * .5).toFixed(2), class: R() < .06 ? 'sk-win' : '', style: `animation-delay:${(R() * 20).toFixed(1)}s` }, city);
+        }
+        x += w + (layer === 2 ? 30 + R() * 60 : 4);
+      }
+    }
   })();
 
   // ================================================================ boot

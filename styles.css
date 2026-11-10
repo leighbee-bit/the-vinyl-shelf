@@ -871,3 +871,110 @@ body.tv .app, body.tv .room, body.tv .ambient { transition: opacity 2.5s ease, f
 body.tv.tv-dim .app { opacity: .35; }
 body.tv.tv-dim .room { filter: brightness(.45); }
 @media (prefers-reduced-motion: reduce) { body.tv .app { animation: none; } }
+
+/* vinyl panel: side breaks */
+.vp-sides { display: flex; flex-wrap: wrap; gap: 8px; }
+.vp-sides span { font-size: 13px; color: var(--muted); padding: 6px 11px; border-radius: 999px; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+.vp-sides b { color: var(--text); margin-right: 4px; }
+
+/* ===================== what should I play? ===================== */
+#pickDlg, #shareDlg { width: min(480px, calc(100vw - 32px)); }
+.pick-body { border-top: 0 !important; }
+.pick-note { padding: 20px 0; }
+.pick-card { display: flex; gap: 22px; align-items: center; margin: 6px 0 4px; }
+.pick-sleeve { position: relative; width: 150px; height: 150px; flex: none; margin-right: 40px; }
+.pick-cover { position: absolute; inset: 0; border-radius: 3px; box-shadow: 0 18px 28px -10px rgba(0,0,0,.8); }
+.pick-disc {
+  position: absolute; top: 4%; left: 4%; width: 92%; height: 92%; border-radius: 50%;
+  background: radial-gradient(circle, #222 0 2%, var(--c1) 2.5% 18%, #0b0b0b 18.5% 20%, transparent 20.5%),
+              repeating-radial-gradient(circle, #151515 0 2px, #1d1d1d 2px 3px);
+  box-shadow: 0 10px 20px -6px rgba(0,0,0,.7);
+  animation: pickSlide .9s .15s var(--ease) both;
+}
+@keyframes pickSlide { from { transform: translateX(0) rotate(0); } to { transform: translateX(34%) rotate(50deg); } }
+.pick-meta { min-width: 0; }
+.pick-meta h3 { margin: 4px 0 2px; font-size: 20px; color: var(--text); letter-spacing: 0; text-transform: none; line-height: 1.25; }
+.pick-meta p { margin: 0; color: var(--muted); font-size: 15px; }
+.pick-meta small { display: block; margin-top: 8px; color: var(--faint); font-size: 13px; }
+@media (max-width: 440px) { .pick-card { flex-direction: column; align-items: flex-start; } .pick-sleeve { width: 130px; height: 130px; } }
+@media (max-width: 520px) { #pickBtn span { display: none; } }
+
+/* ===================== share card ===================== */
+.share-body { border-top: 0 !important; }
+#shareImg { display: block; width: auto; max-width: 100%; height: min(62vh, 640px); aspect-ratio: 9 / 16; margin: 4px auto 0; border-radius: 12px; background: rgba(255,255,255,.04); box-shadow: 0 16px 34px -12px rgba(0,0,0,.8); object-fit: contain; }
+.share-body .row { justify-content: center; }
+.share-body a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.share-body .hint { text-align: center; }
+@media (max-width: 520px) { .note-pill span { display: none; } .note-pill { padding: 5px 9px; } }
+
+/* TV mode: a clear way out */
+.tv-exit { display: none !important; }
+body.tv .tv-exit { display: inline-flex !important; }
+body.tv .corner { gap: 8px; }
+
+/* ===================== background scenes ===================== */
+.room[data-scene]:not(.on) { display: none; }
+.tint-stroke { stroke: var(--c1); }
+.tint-stop { stop-color: var(--c1); }
+.room[data-scene="vinyl"] { filter: blur(3px) brightness(.62) saturate(1); }
+.room[data-scene="party"] { filter: blur(2.5px) brightness(.85) saturate(1.15); }
+.room[data-scene="skyline"] { filter: blur(2.5px) brightness(.8) saturate(1.05); }
+/* party lights move while music plays */
+.pt-beam { transform-box: view-box; transform-origin: 800px 90px; animation: ptSweep 7s ease-in-out infinite alternate; animation-play-state: paused; }
+.pt-beam.b2 { animation-duration: 9s; animation-direction: alternate-reverse; }
+.pt-beam.b3 { animation-duration: 6s; animation-delay: -2s; }
+.pt-beam.b4 { animation-duration: 11s; animation-direction: alternate-reverse; animation-delay: -4s; }
+@keyframes ptSweep { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+.pt-spot { transform-box: fill-box; transform-origin: center; animation: ptSpot 5s ease-in-out infinite alternate; animation-play-state: paused; }
+.pt-spot.s2 { animation-duration: 7s; animation-delay: -3s; }
+.pt-spot.s3 { animation-duration: 4s; animation-delay: -1s; }
+@keyframes ptSpot { from { transform: translateX(-120px) scale(.9); opacity: .6; } to { transform: translateX(120px) scale(1.1); opacity: 1; } }
+.pt-bulb { animation: ptBulb 2.6s ease-in-out infinite alternate; }
+@keyframes ptBulb { from { opacity: .45; } to { opacity: 1; } }
+.pt-sparkle { animation: ptSparkle 3.2s ease-in-out infinite; opacity: 0; animation-play-state: paused; }
+@keyframes ptSparkle { 0%, 100% { opacity: 0; } 50% { opacity: .9; } }
+body.playing .pt-beam, body.playing .pt-spot, body.playing .pt-sparkle { animation-play-state: running; }
+/* skyline: a few stars twinkle, windows switch on and off */
+.sk-twinkle { animation: ptSparkle 5s ease-in-out infinite; }
+.sk-win { animation: skWin 24s steps(1) infinite; }
+@keyframes skWin { 0%, 60% { opacity: .9; } 61%, 100% { opacity: .05; } }
+@media (prefers-reduced-motion: reduce) { .pt-beam, .pt-spot, .pt-bulb, .pt-sparkle, .sk-twinkle, .sk-win { animation: none !important; } .pt-sparkle { opacity: .5; } }
+
+/* settings: scene picker */
+.scenes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.scene-opt { display: flex; flex-direction: column; gap: 6px; align-items: stretch; font-size: 13px; font-weight: 600; color: var(--muted); text-align: center; }
+.scene-opt i { display: block; aspect-ratio: 16 / 10; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.scene-opt[aria-checked="true"] { color: var(--text); }
+.scene-opt[aria-checked="true"] i { box-shadow: 0 0 0 2px var(--accent), inset 0 0 0 1px rgba(255,255,255,.12); }
+@media (max-width: 420px) { .scenes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ===================== ratings & reviews ===================== */
+.stars { display: inline-block; font-size: 14px; line-height: 1; letter-spacing: 1px; vertical-align: -1px; }
+.stars::before {
+  content: "★★★★★";
+  background: linear-gradient(90deg, #f3c66b calc(var(--v, 0) * 20%), rgba(255,255,255,.2) 0);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.stars.big { font-size: 26px; letter-spacing: 3px; }
+.star-input { position: relative; display: inline-block; outline-offset: 4px; border-radius: 6px; }
+.star-input .stars { pointer-events: none; }
+.star-input .stars::before { background: linear-gradient(90deg, #f3c66b calc(var(--v, 0) * 20%), rgba(255,255,255,.2) 0); -webkit-background-clip: text; background-clip: text; }
+.star-input button { position: absolute; top: 0; bottom: 0; width: 10%; cursor: pointer; }
+.star-input button:nth-of-type(1) { left: 0; } .star-input button:nth-of-type(2) { left: 10%; } .star-input button:nth-of-type(3) { left: 20%; }
+.star-input button:nth-of-type(4) { left: 30%; } .star-input button:nth-of-type(5) { left: 40%; } .star-input button:nth-of-type(6) { left: 50%; }
+.star-input button:nth-of-type(7) { left: 60%; } .star-input button:nth-of-type(8) { left: 70%; } .star-input button:nth-of-type(9) { left: 80%; }
+.star-input button:nth-of-type(10) { left: 90%; }
+.rv-mine textarea { width: 100%; font: inherit; font-size: 15px; color: var(--text); background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 10px; resize: vertical; min-height: 90px; line-height: 1.45; }
+.rv-mine textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rv-avg { display: flex; align-items: center; gap: 12px; margin: 2px 0 14px; color: var(--muted); font-size: 14px; }
+.rv-avg b { color: var(--text); font-size: 18px; }
+.rv-list .note { padding-right: 14px; }
+.rv-list .stars, .rv-feed .stars { margin-top: 4px; }
+.rv-feed .note { cursor: pointer; padding-right: 14px; }
+.rv-feed .note:hover { background: rgba(40,27,16,.7); }
+.rate-pill .rate-star { color: #f3c66b; font-size: 14px; line-height: 1; }
+.rate-pill.rated { color: var(--text); }
+@media (max-width: 520px) { .rate-pill .rate-star, .rate-pill #rateText { display: inline; } }
+
+/* sign-in button after sending: greyed out while the 10-second wait counts down */
+#profileGo.sent, #profileGo.sent:hover { opacity: .5; cursor: default; filter: saturate(.3); font-variant-numeric: tabular-nums; }

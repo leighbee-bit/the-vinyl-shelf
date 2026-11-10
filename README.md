@@ -31,13 +31,23 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
   - **Last.fm history** (Settings → Listening history): import your top albums from Last.fm so "Worth owning" is
     filled from day one. Full plays are estimated as album scrobbles ÷ songs on the album (shown with ≈).
     Needs your Last.fm username and a free API key from https://www.last.fm/api/account/create.
+- **What should I play?** (Pick one, or press R): picks a record from your Discogs shelf or saved albums, favouring
+  ones you haven't played in a while (owned vinyl gets a nudge). "Another" picks again; "Put it on" plays it.
+- **Share** (or press S): makes a 1080 × 1920 "Now spinning" card for Stories — the sleeve, the record in the pressing
+  on your turntable, the side and song, how many times you've spun it. Share it from your phone, or save the image.
+- **Ratings & reviews** (★ button under the album, or press W): rate in half stars and write a review. Your ratings
+  get their own shelf on My vinyl. Reviews are saved on your device; to share them and read other listeners'
+  reviews, connect a free Supabase project — see [SUPABASE.md](SUPABASE.md).
+- **Backgrounds** (Settings → Background): Home, Vinyl room (a record shop with a neon sign), Party (mirror ball and
+  coloured lights that move while music plays) and Skyline (a city at night). Every scene picks up the album's colours.
 - **Listening diary**: tap **Note** under the album (or press N) to jot down a line about this play. Notes show in
   the vinyl panel for that album and in a diary at the bottom of My vinyl.
 - **Price watch**: your Discogs wishlist shows the lowest current Discogs price on each sleeve. The app keeps its own
   price history (checked every 6 hours while you browse My vinyl) and marks a ↓ drop when a record is at least 10%
   cheaper than the lowest price it had seen before.
 - **Record stores near you**: a link in the vinyl panel opens Apple Maps or Google Maps with nearby record stores.
-- **Sides**: albums are split into Side A and Side B (four sides for long albums) by running time. The needle
+- **Sides**: albums are split into Side A and Side B the way the vinyl is — from a pressing's tracklist on
+  MusicBrainz (A1, B1… or ONE 1, TWO 1…) when one matches the album, otherwise by running time (four sides for long albums). The needle
   travels across one side at a time, and at the end of a side playback stops so you can flip the record
   (tap the prompt, or press Space). Turn it off in Settings → Sound.
 - **Record wall**: your saved albums and playlists on wooden shelves, with Albums / Playlists tabs and search
@@ -52,7 +62,8 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
 - **Listening room** background that picks up the colours of the current album.
 
 ### On a TV
-- **TV mode**: add `?tv` to the address (or Settings → TV → Open TV mode). Big text you can read from the couch,
+- **TV mode**: add `?tv` to the address (or Settings → TV → Open TV mode). Leave with the **Exit TV mode**
+  button (move the mouse), Esc (twice if full screen) or the remote's Back button. Big text you can read from the couch,
   no buttons, an "Up next" line and a clock. Click or press OK once for full screen.
   - Works with a TV remote or keyboard: OK/Enter plays and pauses (or flips the record), ◀ ▶ and media keys skip.
   - Burn-in care: the picture drifts a few pixels over time and dims after 4 minutes paused.
@@ -61,7 +72,7 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
 
 ### Shortcuts
 Space play/pause (or flip the record) · ← → previous/next · F full screen · L library · T tracklist · V vinyl ·
-N note · C crackle ·
+N note · W review · R pick a record · S share · C crackle ·
 double-click the turntable to show just the record.
 
 Play/pause/skip/seek and choosing records need **Spotify Premium** — that's a Spotify rule.
@@ -86,7 +97,7 @@ Open http://127.0.0.1:8888 (use `127.0.0.1`, not `localhost` — Spotify rejects
 ## 2b. Put it on your iPhone
 Spotify only allows `https://` for anything other than your own computer, so host it — GitHub Pages is free:
 1. Create a public GitHub repo (e.g. `turntable`) and upload
-   `index.html`, `styles.css`, `app.js`, `manifest.json`, `icon.svg`.
+   `index.html`, `styles.css`, `app.js`, `config.js`, `manifest.json`, `icon.svg`.
 2. Repo **Settings → Pages → Deploy from branch → main / root**.
 3. Add `https://YOURNAME.github.io/turntable/` as a Redirect URI in the Spotify dashboard.
 4. Open it in Safari on your iPhone, connect, then **Share → Add to Home Screen**.
