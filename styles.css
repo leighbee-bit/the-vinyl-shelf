@@ -978,3 +978,20 @@ body.playing .pt-beam, body.playing .pt-spot, body.playing .pt-sparkle { animati
 
 /* sign-in button after sending: greyed out while the 10-second wait counts down */
 #profileGo.sent, #profileGo.sent:hover { opacity: .5; cursor: default; filter: saturate(.3); font-variant-numeric: tabular-nums; }
+
+/* shown while the crackle is on but the browser is still waiting for a first click/tap/key */
+.crackle-hint {
+  position: fixed; z-index: 29; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 12px);
+  transform: translate(-50%, 12px); opacity: 0; pointer-events: none; transition: .3s ease;
+  background: var(--glass-strong); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13.5px;
+  padding: 8px 14px 8px 30px; border-radius: 999px; cursor: pointer;
+}
+.crackle-hint::before {
+  content: ''; position: absolute; left: 12px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px;
+  border-radius: 50%; background: var(--accent, #e8a25a); animation: crackle-pulse 1.4s ease-in-out infinite;
+}
+.crackle-hint.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+@keyframes crackle-pulse { 50% { opacity: .35; transform: scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .crackle-hint::before { animation: none; } }
+body.tv .crackle-hint { font-size: max(15px, 1.2vw); bottom: 5vh; }

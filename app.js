@@ -727,8 +727,25 @@
   $('crackleVol').value = String(crackle.volume);
   $('crackleVol').oninput = (e) => crackle.setVolume(Number(e.target.value));
   crackle.setEnabled(crackle.enabled);
-  // browsers only allow audio after a tap/click, so start it on the first one
-  addEventListener('pointerdown', () => { if (crackle.enabled) { crackle.ensure(); crackle.ctx && crackle.ctx.resume(); } }, { once: true });
+  // Browsers only allow sound after someone clicks, taps or presses a key on the page, so a fresh window can't
+  // start the crackle by itself. Start it on the first interaction of any kind (mouse, touch, keyboard, TV remote),
+  // and while it's waiting on music that's playing, show a small "tap to start the crackle" button.
+  const crackleWaiting = () => crackle.enabled && (!crackle.ctx || crackle.ctx.state !== 'running');
+  function unlockCrackle() {
+    if (!crackleWaiting()) return;
+    crackle.ensure();
+    if (crackle.ctx) crackle.ctx.resume().then(renderCrackleHint, () => {});
+  }
+  ['pointerdown', 'pointerup', 'touchend', 'keydown'].forEach((ev) => addEventListener(ev, unlockCrackle, { capture: true, passive: true }));
+  function renderCrackleHint() {
+    const show = crackleWaiting() && soundingNow() && !document.hidden;
+    $('crackleHint').classList.toggle('show', show);
+    $('crackleHint').tabIndex = show ? 0 : -1;
+  }
+  $('crackleHint').textContent = matchMedia('(hover: none)').matches ? 'Tap to start the crackle' : new URLSearchParams(location.search).has('tv') ? 'Press any key to start the crackle' : 'Click to start the crackle';
+  $('crackleHint').onclick = unlockCrackle;
+  setInterval(renderCrackleHint, 500);
+  crackle.ctx && crackle.ctx.resume().catch(() => {}); // some browsers allow it straight away (e.g. a site you use a lot)
 
   // ================================================================ Spotify auth (PKCE — no server needed)
   const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
