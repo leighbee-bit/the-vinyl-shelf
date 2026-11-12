@@ -14,6 +14,7 @@
   let rpmDeg = 200;                     // 33⅓ rpm = 200°/s; singles spin at 45 rpm = 270°/s
   const ARM_REST = -12;                 // tonearm angle on its rest
   const R_OUT = 95, R_IN = 38;          // playable groove band, % of record radius
+  const LABEL_DEFAULT = (document.getElementById('labelText') || {}).textContent || 'The Vinyl Shelf'; // what the record label says when nothing plays
   const REC_R = 41.71;                  // record radius in tonearm-SVG units (platter 86% of 100, record inset 1.5%)
   const TILT = 48 * Math.PI / 180;      // must match .turntable rotateX() in styles.css
   const LIFT = .13;                     // must match .turntable translateY(-13cqw)
@@ -152,7 +153,7 @@
     $('album').textContent = t && t.albumName ? t.albumName : ' ';
     $('tDur').textContent = fmt(t ? t.durationMs : 0);
     $('seek').setAttribute('aria-valuemax', String(Math.round((t ? t.durationMs : 0) / 1000)));
-    document.title = t ? `${t.name} · ${t.artist}` : 'Turntable';
+    document.title = t ? `${t.name} · ${t.artist}` : 'The Vinyl Shelf';
     setVisuals(t ? (t.cover || placeholderCover(t.albumName || t.name)) : null, t ? (t.albumName || t.name) : '');
     ensureAlbum();
   }
@@ -163,7 +164,7 @@
     if (key === lastCoverKey) return;
     lastCoverKey = key;
     const label = $('label'), sleeve = $('sleeveArt');
-    $('labelText').textContent = cover ? (cover.url ? '' : name) : 'Turntable';
+    $('labelText').textContent = cover ? (cover.url ? '' : name) : LABEL_DEFAULT;
     // record slides back into the sleeve and out again
     const peek = $('peek'); peek.classList.add('swap'); setTimeout(() => peek.classList.remove('swap'), 650);
 
@@ -553,7 +554,7 @@
 
   // ================================================================ transport controls
   function togglePlay() {
-    if (state.mode === 'idle') { openSetup(); return; }
+    if (state.mode === 'idle') { openSetup('spotify'); return; }
     const wasPlaying = state.isPlaying;
     if (!wasPlaying && flip.pending) { flipSide(); return; }
     if (!state.track && state.mode === 'demo') { Demo.play({ contextUri: Demo.albums[0].uri }); return; }
@@ -562,7 +563,7 @@
     if (state.mode === 'spotify') playerCall('PUT', wasPlaying ? '/me/player/pause' : '/me/player/play');
   }
   function skip(dir) {
-    if (state.mode === 'idle') { openSetup(); return; }
+    if (state.mode === 'idle') { openSetup('spotify'); return; }
     noteUserNav(); cancelFlip();
     if (state.mode === 'demo') { Demo.step(dir); return; }
     playerCall('POST', dir > 0 ? '/me/player/next' : '/me/player/previous');
@@ -757,7 +758,7 @@
 
   async function login() {
     const clientId = ($('clientId').value || store.get(LS.client) || '').trim();
-    if (!clientId) { openSetup(); toast('Paste your Client ID first'); $('clientId').focus(); return; }
+    if (!clientId) { openSetup('spotify'); toast('Paste your Client ID first'); $('clientId').focus(); return; }
     if (!window.isSecureContext || !crypto.subtle) { toast('Spotify login needs https:// or http://127.0.0.1 — see the README', 6000); return; }
     store.set(LS.client, clientId);
     const verifier = randomString(64);
@@ -820,7 +821,7 @@
     state.mode = 'idle'; resetLibrary();
     setPlayback({ track: null });
     updateDialog();
-    if (expired) toast('Spotify session expired — reconnect in Settings');
+    if (expired) toast('Spotify session expired — reconnect with Connect Spotify');
   }
 
   async function api(path, opts = {}) {
@@ -1065,7 +1066,7 @@
     Demo.play({ contextUri: Demo.albums[0].uri });
     state.progressMs = 52000;
     updateDialog();
-    toast('Demo mode — connect Spotify in Settings for the real thing');
+    toast('Demo mode — use Connect Spotify for the real thing');
   }
 
   // ================================================================ vinyl: pressings, special editions, where to buy
@@ -1365,7 +1366,7 @@
         if (!quiet) toast(`Synced ${data.owned.length} records from Discogs`);
       } catch (e) {
         const why = e.status === 404 ? `Discogs doesn’t know the user “${cfg.user}”.`
-          : e.status === 401 || e.status === 403 ? 'That Discogs collection is private. Add a personal access token in Settings.'
+          : e.status === 401 || e.status === 403 ? 'That Discogs collection is private. Add a personal access token under Connect Discogs.'
           : 'Couldn’t reach Discogs right now.';
         toast(why, 6000);
         if (data) data.error = why; else data = null;
@@ -1830,7 +1831,7 @@
     const uri = findOnSpotify(c.album);
     if (uri) { source().play({ contextUri: uri }); toast(`Putting on “${c.name}”`, 2200); } else playOwned(c.album);
   }
-  $('pickBtn').onclick = () => { if (state.mode === 'idle') { openSetup(); return; } pickOne(); };
+  $('pickBtn').onclick = () => { if (state.mode === 'idle') { openSetup('spotify'); return; } pickOne(); };
   $('pickClose').onclick = () => $('pickDlg').close();
   $('pickDlg').addEventListener('click', (e) => { if (e.target === $('pickDlg')) $('pickDlg').close(); });
 
@@ -2054,7 +2055,7 @@
   $('libraryBtn').onclick = () => {
     const p = $('library');
     if (wallOpen()) { closePanel(p); return; }
-    if (state.mode === 'idle') { openSetup(); return; }
+    if (state.mode === 'idle') { openSetup('spotify'); return; }
     openPanel(p); renderWall();
     KINDS.forEach((k) => { if (!lib.items[k]) loadAll(k); });
     Discogs.maybeAutoSync(); LastFm.maybeAutoImport();
@@ -2167,7 +2168,7 @@
     return `<button class="like-btn${r.liked ? ' on' : ''}" data-like="${idx}" data-where="${where}" aria-pressed="${!!r.liked}" aria-label="Like ${esc(r.name)}’s review">♥ <span>${r.likes || 0}</span></button>`;
   }
   async function toggleLike(r, btn) {
-    if (state.mode !== 'demo' && !Reviews.signedIn()) { toast('Sign in to like reviews (Settings → Profile & reviews)', 3500); return; }
+    if (state.mode !== 'demo' && !Reviews.signedIn()) { toast('Sign in to like reviews — tap Profile at the top', 3500); return; }
     const on = !r.liked;
     r.liked = on; r.likes = Math.max(0, (r.likes || 0) + (on ? 1 : -1));
     const paint = () => { btn.classList.toggle('on', r.liked); btn.setAttribute('aria-pressed', String(r.liked)); btn.querySelector('span').textContent = r.likes; };
@@ -2176,6 +2177,17 @@
     btn.disabled = false;
     if (!ok) { r.liked = !on; r.likes = Math.max(0, r.likes + (on ? -1 : 1)); paint(); toast('Couldn’t save that like — try again'); }
     else trend.at = 0; // re-rank next time Trending is drawn
+  }
+  function fillFeed() {
+    if ($('rvFeed')) Reviews.recent().then((list) => {
+      const box = $('rvFeed'); if (!box) return;
+      lib.items.feed = list || [];
+      box.innerHTML = list && list.length ? `<ul class="notes diary rv-feed">${list.map((r, i) => `<li class="note" data-feed="${i}" role="button" tabindex="0">
+          <span class="note-cover" style="background:${esc(r.album.cover ? `${coverCss(r.album.cover)} center/cover` : placeholder(r.album.name))}"></span>
+          <div><div class="note-meta"><b>${esc(r.name)}</b> on <b>${esc(r.album.name)}</b> · ${esc(r.album.artist)} · ${esc(noteDate(r.at))}</div>
+          ${r.rating ? starsHtml(r.rating) : ''}${r.body ? `<p>${esc(r.body)}</p>` : ''}</div></li>`).join('')}</ul>`
+        : '<p class="wall-note">No reviews yet. Rate what’s playing to start things off.</p>';
+    }).catch(() => { const box = $('rvFeed'); if (box) box.innerHTML = '<p class="wall-note">Couldn’t load reviews right now.</p>'; });
   }
   function renderTrending(sec, shelves, q, cols, gap) {
     sec.hidden = lib.tab !== 'trending';
@@ -2200,7 +2212,8 @@
     const most = shelfOf('trendMost', t.mostRated, (st) => `★ ${avgLabel(st.avg)} · ${st.ratings}`);
     const top = shelfOf('trendTop', t.topRated, (st) => `★ ${avgLabel(st.avg)}`);
     const revs = lib.items.trendReviews = t.popular.filter((r) => match(r.album) || `${r.name} ${r.body}`.toLowerCase().includes(q));
-    let html = group('trendMost', 'Most rated', 'The albums people are rating most this week, then of all time · ★ average · number of ratings',
+    let html = q ? '' : `<div class="vgroup"><h3 class="vgroup-title">Latest reviews<small>What other listeners are saying right now · tap one to read more</small></h3><div id="rvFeed"><p class="wall-note">Loading…</p></div></div>`;
+    html += group('trendMost', 'Most rated', 'The albums people are rating most this week, then of all time · ★ average · number of ratings',
       most, 'No ratings yet. Rate what’s playing to start the chart.');
     html += group('trendTop', 'Highest rated', 'The best-loved albums by average rating · tap one for its reviews',
       top, 'Albums show up here once a couple of people have rated them.');
@@ -2212,6 +2225,7 @@
           ${r.rating ? starsHtml(r.rating) : ''}<p>${esc(r.body)}</p>${likeBtn(r, i, 'trend')}</div></li>`).join('')}</ul>`
         : '<p class="wall-note">No written reviews yet. Write one with the ★ button under the album.</p>'}</div>`;
     shelves.innerHTML = html;
+    fillFeed();
     return most.length + top.length + revs.length || (q ? 0 : 1);
   }
 
@@ -2274,7 +2288,7 @@
       html += group('owned', 'On your shelf', `From your Discogs collection${d.user !== 'demo' ? ` (${esc(d.user)})` : ''} · tap one to play it`,
         lib.items.owned, 'No vinyl in your Discogs collection yet.');
       html += group('wants', 'Wishlist', `From your Discogs wantlist · lowest Discogs price, ↓ when it drops · tap one for pressings and shops`,
-        lib.items.wants, d.wantsHidden ? 'Your Discogs wantlist is private — add a personal access token in Settings to see it.' : 'Nothing on your Discogs wantlist.');
+        lib.items.wants, d.wantsHidden ? 'Your Discogs wantlist is private — add a personal access token under Connect Discogs to see it.' : 'Nothing on your Discogs wantlist.');
       n += lib.items.owned.length + lib.items.wants.length;
     }
     // your ratings, as a shelf with the stars on each sleeve
@@ -2282,22 +2296,12 @@
       badge: r.rating ? `★ ${starLabel(r.rating)}` : 'Reviewed', album: { id: r.spotifyId || `rv:${r.key}`, name: r.name, artist: r.artist, cover: r.cover } }));
     if (lib.items.rated.length || !q) html += group('rated', 'Your ratings', 'Albums you’ve rated or reviewed · tap one to read or edit',
       lib.items.rated, 'Rate what’s playing with the ★ button under the album, or press W.');
-    if (Reviews.remoteOn || state.mode === 'demo') html += `<div class="vgroup"><h3 class="vgroup-title">Latest reviews<small>What other listeners are saying</small></h3><div id="rvFeed"><p class="wall-note">Loading…</p></div></div>`;
     const notes = Notes.all().filter((n) => !q || `${n.name} ${n.artist} ${n.text}`.toLowerCase().includes(q));
     html += `<div class="vgroup"><h3 class="vgroup-title">Listening diary<small>Notes you’ve written while records played · press N to add one</small></h3>${
       notes.length ? `<ul class="notes diary">${notesHtml(notes.slice(0, 60), true)}</ul>` : '<p class="wall-note">No notes yet. Tap “Note” under the album while something plays.</p>'}</div>`;
     shelves.innerHTML = html;
-    const vc = $('vConnect'); if (vc) vc.onclick = () => { openSetup(); setTimeout(() => $('discogsUser').focus(), 50); };
-    if ($('rvFeed')) Reviews.recent().then((list) => {
-      const box = $('rvFeed'); if (!box) return;
-      lib.items.feed = list || [];
-      box.innerHTML = list && list.length ? `<ul class="notes diary rv-feed">${list.map((r, i) => `<li class="note" data-feed="${i}" role="button" tabindex="0">
-          <span class="note-cover" style="background:${esc(r.album.cover ? `${coverCss(r.album.cover)} center/cover` : placeholder(r.album.name))}"></span>
-          <div><div class="note-meta"><b>${esc(r.name)}</b> on <b>${esc(r.album.name)}</b> · ${esc(r.album.artist)} · ${esc(noteDate(r.at))}</div>
-          ${r.rating ? starsHtml(r.rating) : ''}${r.body ? `<p>${esc(r.body)}</p>` : ''}</div></li>`).join('')}</ul>`
-        : '<p class="wall-note">No reviews yet. Rate what’s playing to start things off.</p>';
-    }).catch(() => { const box = $('rvFeed'); if (box) box.innerHTML = '<p class="wall-note">Couldn’t load reviews right now.</p>'; });
-    const vl = $('vLastfm'); if (vl) vl.onclick = () => { openSetup(); setTimeout(() => $('lastfmUser').focus(), 50); };
+    const vc = $('vConnect'); if (vc) vc.onclick = () => { openSetup('discogs'); setTimeout(() => $('discogsUser').focus(), 50); };
+    const vl = $('vLastfm'); if (vl) vl.onclick = () => { openSetup('lastfm'); setTimeout(() => $('lastfmUser').focus(), 50); };
     return n || (q ? 0 : 1);
   }
 
@@ -2404,10 +2408,46 @@
     const lc = LastFm.config() || {};
     $('lastfmUser').value = lc.user || ''; $('lastfmKey').value = lc.key || '';
     renderLastFmStatus();
+    renderNav();
   }
-  function openSetup() { updateDialog(); if (!dialog.open) dialog.showModal(); }
+  const PAGES = { spotify: 'Connect Spotify', discogs: 'Connect Discogs', lastfm: 'Connect Last.fm', profile: 'Profile', settings: 'Settings' };
+  function openSetup(page = 'settings') {
+    if (!PAGES[page]) page = 'settings';
+    dialog.dataset.page = page;
+    $('setupTitle').textContent = PAGES[page];
+    updateDialog();
+    if (!dialog.open) dialog.showModal();
+    dialog.scrollTop = 0;
+  }
 
-  $('settingsBtn').onclick = openSetup;
+  // ---- top bar: one button per job (a ☰ menu on narrower screens)
+  const nav = $('topnav');
+  function setMenu(open) { nav.classList.toggle('open', open); $('menuBtn').setAttribute('aria-expanded', String(open)); }
+  $('menuBtn').onclick = (e) => { e.stopPropagation(); setMenu(!nav.classList.contains('open')); };
+  addEventListener('pointerdown', (e) => { if (nav.classList.contains('open') && !e.target.closest('#topnav, #menuBtn')) setMenu(false); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && nav.classList.contains('open')) { setMenu(false); $('menuBtn').focus(); } });
+  nav.querySelectorAll('[data-page]').forEach((b) => { b.onclick = () => { setMenu(false); openSetup(b.dataset.page); }; });
+  $('navReviews').onclick = () => { setMenu(false); openMyReviews(); };
+  $('navFeed').onclick = () => {
+    setMenu(false);
+    const p = $('library');
+    setWallTab('trending'); openPanel(p); renderWall();
+  };
+  // connected services read "Spotify ●" instead of "Connect Spotify"
+  function renderNav() {
+    const set = (id, on, onLabel, offLabel) => {
+      const b = $(id); b.classList.toggle('on', on);
+      b.querySelector('span').textContent = on ? onLabel : offLabel;
+      b.title = on ? `${onLabel}: connected` : '';
+    };
+    set('navSpotify', state.mode === 'spotify', 'Spotify', 'Connect Spotify');
+    set('navDiscogs', Discogs.connected(), 'Discogs', 'Connect Discogs');
+    set('navLastfm', !!LastFm.config(), 'Last.fm', 'Connect Last.fm');
+    const p = Reviews.profile();
+    set('navProfile', Reviews.signedIn(), p ? p.display_name : 'Profile', 'Profile');
+  }
+  setInterval(renderNav, 2000);
+  setTimeout(renderNav, 0);
   $('discogsSync').onclick = () => {
     if (state.mode === 'demo') { toast('Demo mode uses a made-up collection — connect Spotify first'); return; }
     if (!Discogs.setConfig($('discogsUser').value, $('discogsToken').value)) { toast('Enter your Discogs username'); return; }
@@ -2550,7 +2590,7 @@
     if (document.fullscreenElement || document.webkitFullscreenElement) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch {} }
     location.replace(urlWith(q));
   }
-  $('tvBtn').textContent = tvMode ? 'Exit TV mode' : 'Open TV mode';
+  $('tvBtn').querySelector('span').textContent = tvMode ? 'Exit TV mode' : 'TV Mode';
   $('tvBtn').onclick = () => {
     if (tvMode) { exitTv(); return; }
     const q = new URLSearchParams(location.search); q.set('tv', '');
@@ -2711,7 +2751,7 @@
           profile = made;
         }
         if (profile) { store.del('tt.pendingName'); await syncMine(); }
-        if (!quiet) toast(profile ? `Signed in as ${profile.display_name}` : 'Signed in — add a display name in Settings to share reviews', 4000);
+        if (!quiet) toast(profile ? `Signed in as ${profile.display_name}` : 'Signed in — add a display name under Profile to share reviews', 4000);
       }
       renderProfile(); refreshReviewUI();
     }
@@ -2868,6 +2908,30 @@
     const lk = e.target.closest('[data-like]'); if (!lk) return;
     const r = (rv.others || [])[Number(lk.dataset.like)]; if (r) toggleLike(r, lk);
   });
+  // ---- "Your reviews": everything you've rated or written, newest first
+  function openMyReviews() { renderMyReviews(); openPanel($('myReviewsPanel')); }
+  function renderMyReviews() {
+    const list = Reviews.allMine();
+    const who = state.mode === 'demo' ? 'Demo mode — saved on this device only.'
+      : Reviews.signedIn() ? `Shared publicly as ${Reviews.profile().display_name}.`
+      : Reviews.remoteOn ? 'Saved on this device. Sign in under Profile to share them.' : 'Saved on this device.';
+    const rated = list.filter((r) => r.rating);
+    const avg = rated.length ? rated.reduce((n, r) => n + r.rating, 0) / rated.length : 0;
+    $('myRvSub').textContent = list.length ? `${list.length} album${list.length === 1 ? '' : 's'}${rated.length ? ` · average ★ ${(avg / 2).toFixed(1)}` : ''}` : '';
+    $('myRvBody').innerHTML = `<p class="vp-fine">${esc(who)}</p>` + (list.length
+      ? `<ul class="notes diary rv-feed my-reviews">${list.map((r, i) => `<li class="note" data-mine="${i}" role="button" tabindex="0">
+          <span class="note-cover" style="background:${esc(r.cover ? `${coverCss(r.cover)} center/cover` : placeholder(r.name || r.key))}"></span>
+          <div><div class="note-meta"><b>${esc(r.name)}</b> · ${esc(r.artist || '')} · ${esc(noteDate(r.at))}</div>
+          ${r.rating ? starsHtml(r.rating) : ''}${r.body ? `<p>${esc(r.body)}</p>` : ''}</div></li>`).join('')}</ul>`
+      : '<p class="vp-note">You haven’t rated anything yet. While an album plays, tap ★ Rate under it (or press W).</p>');
+    lib.items.mine = list;
+  }
+  $('myRvBody').addEventListener('click', (e) => {
+    const li = e.target.closest('[data-mine]'); if (!li) return;
+    const r = (lib.items.mine || [])[Number(li.dataset.mine)]; if (!r) return;
+    openReviews({ id: r.spotifyId || `rv:${r.key}`, name: r.name, artist: r.artist, cover: r.cover });
+  });
+  $('myRvBody').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('[data-mine]')) e.target.click(); });
   function openReviews(album) {
     if (!album) return;
     rv.album = album;
@@ -2884,7 +2948,7 @@
     let draft = { rating: mine ? mine.rating || 0 : 0, body: mine ? mine.body || '' : '' };
     const who = state.mode === 'demo' ? 'Demo mode — saved on this device only.'
       : Reviews.signedIn() ? `Shown publicly as <b>${esc(Reviews.profile().display_name)}</b>.`
-      : Reviews.remoteOn ? 'Only on this device until you sign in (Settings → Profile &amp; reviews).'
+      : Reviews.remoteOn ? 'Only on this device until you sign in (Profile, at the top).'
       : 'Saved on this device.';
     const body = $('rvBody');
     body.innerHTML = `<h4>Your review</h4>
@@ -2925,6 +2989,7 @@
     renderRatePill();
     if ($('reviewsPanel').classList.contains('open')) renderReviews();
     trend.at = 0;
+    if ($('myReviewsPanel').classList.contains('open')) renderMyReviews();
     if (wallOpen() && (lib.tab === 'vinyl' || lib.tab === 'trending')) renderWall();
   }
   function renderRatePill() {
@@ -3053,6 +3118,33 @@
   })();
 
   // ================================================================ boot
+  // welcome screen: "Welcome to" then "The Vinyl Shelf" written out in script, then it fades to the deck.
+  // Skipped when coming back from a Spotify or sign-in link; tap, click or any key skips it.
+  let introOver = () => {};
+  const introDone = new Promise((r) => { introOver = r; });
+  (() => {
+    const intro = $('intro'); if (!intro) { introOver(); return; }
+    if (/[?&]code=|access_token=/.test(location.search + location.hash)) { intro.remove(); introOver(); return; }
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const skip = intro.querySelector('.intro-skip');
+    if (skip && !matchMedia('(hover: none)').matches) skip.textContent = 'Click anywhere or press any key to skip';
+    let done = false, timer = 0;
+    const finish = () => {
+      if (done) return; done = true; clearTimeout(timer);
+      intro.classList.add('out');
+      removeEventListener('keydown', onKey, true);
+      setTimeout(introOver, 350);
+      setTimeout(() => intro.remove(), 900);
+    };
+    const onKey = (e) => { e.preventDefault(); e.stopPropagation(); finish(); };
+    intro.addEventListener('pointerup', finish);
+    addEventListener('keydown', onKey, true);
+    const go = () => { if (done || intro.classList.contains('go')) return; intro.classList.add('go'); timer = setTimeout(finish, reduce ? 1800 : 4200); };
+    // wait (briefly) for the script font so the words are written in it, not a fallback
+    const font = document.fonts && document.fonts.load ? document.fonts.load('172px Allura', 'The Vinyl Shelf') : Promise.resolve();
+    Promise.race([font, new Promise((r) => setTimeout(r, 1500))]).then(go, go);
+  })();
+
   renderGrooves();
   requestAnimationFrame(frame);
   (async () => {
@@ -3068,7 +3160,7 @@
       startDemo();
     } else {
       onTrackChange();
-      openSetup();
+      introDone.then(() => openSetup('spotify')); // after the welcome screen, not on top of it
     }
   })();
 })();

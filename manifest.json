@@ -1,6 +1,6 @@
 {
-  "name": "Turntable",
-  "short_name": "Turntable",
+  "name": "The Vinyl Shelf",
+  "short_name": "TVS",
   "description": "A record player visualizer for whatever you're playing on Spotify.",
   "start_url": "./",
   "scope": "./",

@@ -5,7 +5,8 @@
 :root {
   --c1: #7a5238;               /* album colour (vivid) */
   --c2: #1d140f;               /* album colour (dark)  */
-  --accent: #e2683c;
+  --accent: #a77bff;           /* app theme: purple */
+  --brand: #7c4dff;            /* filled buttons (white text) */
   --text: #f4efe9;
   --muted: rgba(244, 239, 233, .66);
   --faint: rgba(244, 239, 233, .42);
@@ -551,7 +552,7 @@ body.playing .tl li.current .n::before { animation-play-state: running; }
 /* ---- record wall tabs ---- */
 .wall-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(0,0,0,.3); border: 1px solid var(--line); margin-left: 12px; }
 .wall-tabs button { padding: 8px 16px; border-radius: 999px; font-size: 14px; font-weight: 700; color: var(--muted); display: inline-flex; gap: 7px; align-items: baseline; }
-.wall-tabs button[aria-selected="true"] { background: linear-gradient(180deg, #e7c891, #b98f55); color: #2b1b0d; box-shadow: 0 4px 10px -3px rgba(0,0,0,.6); }
+.wall-tabs button[aria-selected="true"] { background: linear-gradient(180deg, #a97fff, #7c4dff); color: #fff; box-shadow: 0 4px 10px -3px rgba(0,0,0,.6); }
 .wall-tabs .count { font-size: 12px; font-weight: 600; opacity: .7; }
 .wall-sec { padding-top: 26px; }
 @media (max-width: 600px) { .wall-tabs { order: 2; margin-left: 0; } .wall-head .tl-meta { flex: 1; } }
@@ -647,8 +648,11 @@ input[type=text] { width: 100%; font: inherit; font-size: 16px; color: var(--tex
 input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 .btn { padding: 9px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; border: 1px solid var(--line); }
-.btn.primary { background: #1ed760; color: #000; border-color: transparent; }
-.btn.primary:hover { background: #3be477; }
+.btn.primary { background: var(--brand); color: #fff; border-color: transparent; }
+.btn.primary:hover { background: #8f66ff; }
+/* Spotify's own button keeps Spotify green */
+#connectBtn.btn.primary { background: #1ed760; color: #000; }
+#connectBtn.btn.primary:hover { background: #3be477; }
 .btn:not(.primary):hover { background: rgba(255,255,255,.08); }
 .warn { color: #ffb38a !important; font-size: 13px !important; }
 .hint { font-size: 12.5px !important; color: var(--faint) !important; }
@@ -989,7 +993,7 @@ body.playing .pt-beam, body.playing .pt-spot, body.playing .pt-sparkle { animati
 }
 .crackle-hint::before {
   content: ''; position: absolute; left: 12px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px;
-  border-radius: 50%; background: var(--accent, #e8a25a); animation: crackle-pulse 1.4s ease-in-out infinite;
+  border-radius: 50%; background: var(--accent); animation: crackle-pulse 1.4s ease-in-out infinite;
 }
 .crackle-hint.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 @keyframes crackle-pulse { 50% { opacity: .35; transform: scale(.7); } }
@@ -1012,7 +1016,7 @@ body.tv .crackle-hint { font-size: max(15px, 1.2vw); bottom: 5vh; }
   flex: none; align-self: center; width: 1.6em; text-align: center; font-size: 15px; font-weight: 700;
   color: var(--faint); font-variant-numeric: tabular-nums;
 }
-.trend-reviews .note:nth-child(-n+3) .trend-rank { color: var(--accent, #e8a25a); }
+.trend-reviews .note:nth-child(-n+3) .trend-rank { color: var(--accent); }
 
 /* ================================================================ turntable detail */
 /* platter rim: brushed aluminium with two rows of strobe dots (they look still at the right speed under the lamp) */
@@ -1103,3 +1107,107 @@ body.playing .strobe-lamp::after { background: #ffb36b; box-shadow: 0 0 .8cqw #f
   background: linear-gradient(180deg, #2a2623, #121110);
 }
 .front::before { left: 5%; } .front::after { right: 5%; }
+
+/* ================================================================ welcome screen */
+.intro {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 40%, #33204f 0%, #1a1128 55%, #0c0812 100%);
+  color: #f6eee3; cursor: pointer;
+  transition: opacity .8s ease, visibility 0s linear .8s;
+}
+.intro.out { opacity: 0; visibility: hidden; pointer-events: none; }
+.intro.out .intro-inner { transform: scale(1.04); }
+.intro-disc { /* a faint record turning slowly behind the words */
+  position: absolute; width: 130vmax; aspect-ratio: 1; left: 50%; top: 50%; margin: -65vmax 0 0 -65vmax; border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle, rgba(255,255,255,.035) 0 1px, transparent 1px 7px),
+    radial-gradient(circle, transparent 0 60%, rgba(0,0,0,.35) 100%);
+  opacity: 0; animation: introDisc 1.6s ease .1s forwards, introSpin 40s linear infinite;
+}
+.intro-inner { position: relative; text-align: center; padding: 0 16px; transition: transform .8s var(--ease); width: min(92vw, 820px); }
+.intro-welcome {
+  margin: 0 0 .1em; white-space: nowrap;
+  font-family: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  font-weight: 400; font-size: clamp(20px, 3.4vw, 34px); letter-spacing: .04em; color: rgba(246,238,227,.82);
+  opacity: 0; transform: translateY(10px);
+}
+.intro-script { display: block; width: 100%; height: auto; overflow: visible; }
+.intro-ink {
+  font-family: Allura, "Snell Roundhand", "Apple Chancery", cursive; font-size: 172px;
+  fill: #f6eee3; stroke: #f6eee3; stroke-width: .6; paint-order: stroke;
+  filter: drop-shadow(0 6px 18px rgba(0,0,0,.45));
+}
+.intro-rule {
+  display: block; height: 2px; width: 120px; margin: 4px auto 0; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: scaleX(0); opacity: 0;
+}
+.intro-skip {
+  position: absolute; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 8px); left: 0; right: 0; margin: 0; text-align: center;
+  font-size: 12.5px; letter-spacing: .08em; color: rgba(246,238,227,.38); opacity: 0;
+}
+/* the sequence starts once the script font is ready (app.js adds .go) */
+.intro.go .intro-welcome { animation: introUp .9s var(--ease) forwards; }
+.intro.go .intro-pen { animation: introWrite 2.3s cubic-bezier(.45,.05,.4,1) .55s forwards; }
+.intro.go .intro-rule { animation: introRule .9s var(--ease) 2.6s forwards; }
+.intro.go .intro-skip { animation: introUp .6s ease 1.2s forwards; }
+@keyframes introUp { to { opacity: 1; transform: none; } }
+@keyframes introWrite { to { transform: translateX(1700px); } }
+@keyframes introRule { to { opacity: 1; transform: scaleX(1); } }
+@keyframes introDisc { to { opacity: 1; } }
+@keyframes introSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .intro-disc { animation: introDisc .4s ease forwards; }
+  .intro.go .intro-welcome, .intro.go .intro-skip { animation: introUp .4s ease forwards; }
+  .intro.go .intro-pen { animation: none; transform: translateX(1700px); }
+  .intro.go .intro-rule { animation: introRule .4s ease forwards; }
+}
+
+/* ================================================================ dialog pages: one job per button */
+#setup[data-page] section[data-page] { display: none; }
+#setup[data-page="spotify"] section[data-page="spotify"],
+#setup[data-page="discogs"] section[data-page="discogs"],
+#setup[data-page="lastfm"] section[data-page="lastfm"],
+#setup[data-page="profile"] section[data-page="profile"],
+#setup[data-page="settings"] section[data-page="settings"] { display: block; }
+#setup[data-page] section[data-page] h3:first-child { display: none; }      /* the dialog title already says it */
+#setup[data-page="settings"] section[data-page] h3:first-child { display: block; }
+
+/* ================================================================ top bar */
+.topnav { display: flex; align-items: center; gap: 4px; }
+.nav-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 13px; border-radius: 999px;
+  font: inherit; font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap; cursor: pointer;
+  background: var(--glass); border: 1px solid var(--line);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  transition: background .2s, border-color .2s;
+}
+.nav-btn:hover { background: rgba(70,50,110,.55); border-color: rgba(167,123,255,.35); }
+.nav-btn:focus-visible, .menu-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nav-btn .dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,.7); }
+.nav-btn.on .dot { display: inline-block; }
+.nav-btn span { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; }
+.menu-btn { display: none; cursor: pointer; color: var(--text); font: inherit; font-weight: 600; font-size: 14px; }
+body.tv .topnav, body.tv .menu-btn { display: none !important; }
+/* narrower screens: the same buttons inside a ☰ menu */
+@media (max-width: 1239px) {
+  .menu-btn { display: inline-flex; }
+  .topnav {
+    position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+    flex-direction: column; align-items: stretch; gap: 2px; min-width: 210px; padding: 6px;
+    border-radius: 16px; background: rgba(24,18,32,.97); border: 1px solid rgba(167,123,255,.22);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 18px 50px rgba(0,0,0,.5);
+    opacity: 0; transform: translateY(-6px); visibility: hidden; pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+  }
+  .topnav.open { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity .18s ease, transform .18s ease; }
+  .topnav .nav-btn { height: 42px; padding: 0 14px; font-size: 14.5px; border: 0; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 10px; justify-content: space-between; }
+  .topnav .nav-btn:hover { background: rgba(167,123,255,.14); }
+  .topnav .nav-btn .dot { order: 2; }
+  .topnav #settingsBtn { margin-top: 4px; box-shadow: 0 -1px 0 var(--line); border-radius: 0 0 10px 10px; }
+}
+@media (max-width: 560px) { .menu-btn span { display: none; } .menu-btn { padding: 0 11px; } }
+.my-reviews .note { cursor: pointer; }
+
+.corner.right:has(.topnav.open) { z-index: 45; opacity: 1 !important; }

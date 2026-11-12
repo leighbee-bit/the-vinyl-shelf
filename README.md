@@ -26,9 +26,9 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
   - **On your shelf** and **Wishlist**: your Discogs collection and wantlist (vinyl only). Tap an owned record to play
     it on Spotify. Albums you own get a ✓ sticker on the wall, wishlist ones a ♥, and the now-playing pill says
     "On your shelf".
-  - Connect in Settings with your Discogs username (public collections), or add a personal access token for a
+  - Use **Connect Discogs** (top bar) with your Discogs username (public collections), or add a personal access token for a
     private one. Listening stats stay in your browser.
-  - **Last.fm history** (Settings → Listening history): import your top albums from Last.fm so "Worth owning" is
+  - **Last.fm history** (**Connect Last.fm** in the top bar): import your top albums from Last.fm so "Worth owning" is
     filled from day one. Full plays are estimated as album scrobbles ÷ songs on the album (shown with ≈).
     Needs your Last.fm username and a free API key from https://www.last.fm/api/account/create.
 - **What should I play?** (Pick one, or press R): picks a record from your Discogs shelf or saved albums, favouring
@@ -38,6 +38,10 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
 - **Ratings & reviews** (★ button under the album, or press W): rate in half stars and write a review. Your ratings
   get their own shelf on My vinyl. Reviews are saved on your device; to share them and read other listeners'
   reviews, connect a free Supabase project — see [SUPABASE.md](SUPABASE.md).
+- **Top bar**: one button per job: Connect Spotify, Connect Discogs, Connect Last.fm, Profile (sign in to share reviews),
+  Reviews (everything you've rated), Feed (everyone's latest reviews and what's trending), TV Mode and Settings
+  (background, turntable finish and sound). On narrower screens they sit in a ☰ Menu.
+- **Welcome screen**: “Welcome to” and *The Vinyl Shelf* written out in script when the app opens (tap, click or any key skips it).
 - **Trending** (a tab on the record wall): the most-rated and highest-rated albums across everyone, and the
   most-liked reviews with their stars and text. Tap ♥ to like a review.
 - **Backgrounds** (Settings → Background): Home, Vinyl room (a record shop with a neon sign), Party (mirror ball and
@@ -64,7 +68,7 @@ Works on your computer and on iPhone (add it to your Home Screen and it opens fu
 - **Listening room** background that picks up the colours of the current album.
 
 ### On a TV
-- **TV mode**: add `?tv` to the address (or Settings → TV → Open TV mode). Leave with the **Exit TV mode**
+- **TV mode**: add `?tv` to the address (or the **TV Mode** button). Leave with the **Exit TV mode**
   button (move the mouse), Esc (twice if full screen) or the remote's Back button. Big text you can read from the couch,
   no buttons, an "Up next" line and a clock. Click or press OK once for full screen.
   - Works with a TV remote or keyboard: OK/Enter plays and pauses (or flips the record), ◀ ▶ and media keys skip.

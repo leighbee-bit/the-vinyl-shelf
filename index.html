@@ -6,14 +6,39 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Turntable">
-<meta name="theme-color" content="#1d140f">
+<meta name="apple-mobile-web-app-title" content="Vinyl Shelf">
+<meta name="theme-color" content="#16111d">
 <title>The Vinyl Shelf</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
-<link rel="stylesheet" href="styles.css?v=2026-11-10m">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Allura&display=block&text=TheVinylShf%20">
+<link rel="stylesheet" href="styles.css?v=2026-11-11h">
 </head>
 <body>
+  <!-- ===================== welcome screen (app.js writes it out, then fades it away) ===================== -->
+  <div class="intro" id="intro" role="presentation">
+    <div class="intro-disc" aria-hidden="true"></div>
+    <div class="intro-inner">
+      <p class="intro-welcome">Welcome to</p>
+      <svg class="intro-script" viewBox="0 0 1000 260" role="img" aria-label="The Vinyl Shelf">
+        <defs>
+          <linearGradient id="introFeather" x1="0" x2="1">
+            <stop offset="0" stop-color="#fff"/><stop offset=".9" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+          </linearGradient>
+          <mask id="introMask" maskUnits="userSpaceOnUse" x="-200" y="-40" width="1400" height="340">
+            <rect class="intro-pen" x="-2500" y="-40" width="2300" height="340" fill="url(#introFeather)"/>
+          </mask>
+        </defs>
+        <g mask="url(#introMask)">
+          <text class="intro-ink" x="500" y="178" text-anchor="middle">The Vinyl Shelf</text>
+        </g>
+      </svg>
+      <span class="intro-rule" aria-hidden="true"></span>
+    </div>
+    <p class="intro-skip">Tap anywhere to skip</p>
+  </div>
 
   <!-- ===================== the listening room (background) ===================== -->
   <svg class="room on" data-scene="home" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
@@ -220,15 +245,26 @@
     </button>
   </div>
   <div class="corner right">
+    <button class="pill menu-btn" id="menuBtn" aria-expanded="false" aria-controls="topnav">
+      <svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      <span>Menu</span>
+    </button>
+    <nav class="topnav" id="topnav" aria-label="Main">
+      <button class="nav-btn" id="navSpotify" data-page="spotify"><i class="dot"></i><span>Connect Spotify</span></button>
+      <button class="nav-btn" id="navDiscogs" data-page="discogs"><i class="dot"></i><span>Connect Discogs</span></button>
+      <button class="nav-btn" id="navLastfm" data-page="lastfm"><i class="dot"></i><span>Connect Last.fm</span></button>
+      <button class="nav-btn" id="navProfile" data-page="profile"><i class="dot"></i><span>Profile</span></button>
+      <button class="nav-btn" id="navReviews"><span>Reviews</span></button>
+      <button class="nav-btn" id="navFeed"><span>Feed</span></button>
+      <button class="nav-btn" id="tvBtn"><span>TV Mode</span></button>
+      <button class="nav-btn" id="settingsBtn" data-page="settings"><span>Settings</span></button>
+    </nav>
     <button class="pill tv-exit" id="tvExit" title="Exit TV mode (Esc)" aria-label="Exit TV mode">
       <svg viewBox="0 0 24 24"><path d="M21 3H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5v2h8v-2h5a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 14H3V5h18zM8.4 7 7 8.4 9.6 11 7 13.6 8.4 15l2.6-2.6 2.6 2.6 1.4-1.4-2.6-2.6L15 8.4 13.6 7 11 9.6z"/></svg>
       <span>Exit TV mode</span>
     </button>
     <button class="icon-btn small" id="fsBtn" title="Full screen (F)" aria-label="Full screen">
       <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></svg>
-    </button>
-    <button class="icon-btn small" id="settingsBtn" title="Settings" aria-label="Settings">
-      <svg viewBox="0 0 24 24"><path d="M18.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L14 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L5.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.700 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5L18.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
     </button>
   </div>
 
@@ -252,7 +288,7 @@
           <div class="record" id="record">
             <div class="label" id="label">
               <div class="label-next" id="labelNext"></div>
-              <div class="label-text" id="labelText">Turntable</div>
+              <div class="label-text" id="labelText">Vinyl Shelf</div>
             </div>
           </div>
           <div class="sheen"></div>
@@ -435,7 +471,7 @@
         <button role="tab" data-tab="albums" aria-selected="true">Albums <span class="count" data-count="albums"></span></button>
         <button role="tab" data-tab="playlists" aria-selected="false">Playlists <span class="count" data-count="playlists"></span></button>
         <button role="tab" data-tab="vinyl" aria-selected="false">My vinyl <span class="count" data-count="vinyl"></span></button>
-        <button role="tab" data-tab="trending" aria-selected="false">Trending</button>
+        <button role="tab" data-tab="trending" aria-selected="false">Feed</button>
       </div>
       <input type="search" id="libSearch" placeholder="Search your records" autocomplete="off" spellcheck="false" aria-label="Search your records">
       <button class="icon-btn small close" data-close aria-label="Close record wall">
@@ -476,6 +512,20 @@
   </aside>
 
   <!-- ===================== ratings & reviews ===================== -->
+  <aside class="panel vinylpanel reviews" id="myReviewsPanel" aria-label="Your reviews">
+    <header class="panel-head">
+      <div class="tl-meta">
+        <div class="kicker">Reviews</div>
+        <h2>Your reviews</h2>
+        <p id="myRvSub"></p>
+      </div>
+      <button class="icon-btn small close" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z"/></svg>
+      </button>
+    </header>
+    <div class="vp-body" id="myRvBody"></div>
+  </aside>
+
   <aside class="panel vinylpanel reviews" id="reviewsPanel" aria-label="Ratings and reviews">
     <header class="panel-head">
       <div class="tl-cover" id="rvCover"></div>
@@ -544,13 +594,13 @@
   <!-- ===================== settings ===================== -->
   <dialog id="setup">
     <div class="dlg-head">
-      <h2>Settings</h2>
-      <button class="icon-btn small" id="closeBtn" aria-label="Close settings">
+      <h2 id="setupTitle">Settings</h2>
+      <button class="icon-btn small" id="closeBtn" aria-label="Close">
         <svg viewBox="0 0 24 24"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z"/></svg>
       </button>
     </div>
 
-    <section>
+    <section data-page="spotify">
       <h3>Spotify</h3>
       <p id="spotifyStatus">Not connected.</p>
       <details id="setupSteps" open>
@@ -574,7 +624,7 @@
       </div>
     </section>
 
-    <section id="profileSec">
+    <section id="profileSec" data-page="profile">
       <h3>Profile &amp; reviews</h3>
       <p id="profileStatus">Your ratings and reviews are saved on this device.</p>
       <div id="profileForm" class="hidden">
@@ -599,7 +649,7 @@
       </div>
     </section>
 
-    <section id="discogsSec">
+    <section id="discogsSec" data-page="discogs">
       <h3>Record collection</h3>
       <p id="discogsStatus">Add your Discogs username to see which records you own and what’s on your wishlist.</p>
       <label class="field" for="discogsUser">Discogs username</label>
@@ -619,7 +669,7 @@
       <p class="hint">Only vinyl is shown. Your listening stats stay in this browser.</p>
     </section>
 
-    <section id="lastfmSec">
+    <section id="lastfmSec" data-page="lastfm">
       <h3>Listening history</h3>
       <p id="lastfmStatus">Bring in years of listening so “Worth owning” is filled from day one.</p>
       <details class="mini">
@@ -641,24 +691,17 @@
       <p class="hint">Full plays are estimated: an album’s plays divided by its number of songs.</p>
     </section>
 
-    <section>
-      <h3>TV</h3>
-      <p>Show the turntable on a TV: open TV mode in the TV’s web browser, or cast this tab from Chrome (⋮ → Cast) or AirPlay it from a Mac or iPhone.
-        TV mode has bigger text, no buttons, and works with a TV remote (OK plays and pauses, ◀ ▶ skip).</p>
-      <div class="row"><button class="btn" id="tvBtn">Open TV mode</button></div>
-    </section>
-
-    <section>
+    <section data-page="settings">
       <h3>Background</h3>
       <div class="scenes" id="scenes"></div>
     </section>
 
-    <section>
+    <section data-page="settings">
       <h3>Turntable finish</h3>
       <div class="swatches" id="swatches"></div>
     </section>
 
-    <section>
+    <section data-page="settings">
       <h3>Sound</h3>
       <label class="check"><input type="checkbox" id="crackleToggle"> Vinyl crackle while a song plays</label>
       <label class="check"><input type="checkbox" id="flipToggle"> Stop at the end of each side so you can flip the record</label>
@@ -667,7 +710,7 @@
     </section>
   </dialog>
 
-<script src="config.js?v=2026-11-10m"></script>
-<script src="app.js?v=2026-11-10m"></script>
+<script src="config.js?v=2026-11-11h"></script>
+<script src="app.js?v=2026-11-11h"></script>
 </body>
 </html>
